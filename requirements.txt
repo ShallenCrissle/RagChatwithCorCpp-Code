@@ -19,8 +19,8 @@ requests
 
 # Code Parsing
 tree-sitter==0.20.4
-tree_sitter_languages==1.10.2  # for C/C++ support
-clang==15.0.6.1                # from PyPI (requires libclang installed system-wide)
+tree_sitter_languages==1.10.2
+clang==15.0.6.1  # Requires system-wide libclang
 
-# Compatibility / Core
-protobuf  # required for some LLM clients
+# Compatibility
+protobuf
