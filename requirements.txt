@@ -24,3 +24,4 @@ clang==15.0.6.1  # Requires system-wide libclang
 
 # Compatibility
 protobuf
+uvicorn
