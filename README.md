@@ -56,7 +56,6 @@ The tool allows you to:
 - View **side-by-side responses** from Gemini and Cohere
 - See scores from BERTScore, BLEU, and ROUGE
 - Submit feedback on which model you preferred
-
-All interactions and feedback are stored in:
+All interactions and feedback are stored in:C:feedback_log.json
 
 
