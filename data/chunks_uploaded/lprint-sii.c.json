@@ -1,0 +1,1130 @@
+[
+  {
+    "type": "struct_assignment",
+    "start_line": 1,
+    "end_line": 458,
+    "code": "//\n// Seiko Instruments, Inc. driver for LPrint, a Label Printer Application\n//\n// Copyright \u00a9\u00a02023 by Michael R Sweet.\n//\n// Licensed under Apache License v2.0.  See the file \"LICENSE\" for more\n// information.\n//\n\n#include \"lprint.h\"\n\n\n//\n// Local types...\n//\n\nenum lprint_slp_cmd_e\n{\n  LPRINT_SLP_CMD_NOP = 0x00,\n  LPRINT_SLP_CMD_STATUS,\n  LPRINT_SLP_CMD_VERSION,\n  LPRINT_SLP_CMD_BAUDRATE,\n  LPRINT_SLP_CMD_PRINT,\n  LPRINT_SLP_CMD_PRINTRLE,\n  LPRINT_SLP_CMD_MARGIN,\n  LPRINT_SLP_CMD_REPEAT,\n  LPRINT_SLP_CMD_TAB = 0x09,\n  LPRINT_SLP_CMD_LINEFEED,\n  LPRINT_SLP_CMD_VERTTAB,\n  LPRINT_SLP_CMD_FORMFEED,\n  LPRINT_SLP_CMD_SETSPEED,\n  LPRINT_SLP_CMD_DENSITY,\n  LPRINT_SLP_CMD_RESET,\n  LPRINT_SLP_CMD_MODEL = 0x12,\n  LPRINT_SLP_CMD_INDENT = 0x16,\n  LPRINT_SLP_CMD_FINEMODE,\n  LPRINT_SLP_CMD_SETSERIALNUM = 0x1B,\n  LPRINT_SLP_CMD_CHECK = 0xA5\n};\n\ntypedef struct lprint_sii_s\t\t// SII driver data\n{\n  unsigned\tmax_width;\t\t// Maximum width in dots\n  int\t\tblanks;\t\t\t// Blank lines\n  lprint_dither_t dither;\t\t// Dither buffer\n} lprint_sii_t;\n\n\n//\n// Local globals...\n//\n\nstatic const char * const lprint_sii_media[] =\n{\t\t\t\t\t// Supported media sizes for labels\n  \"om_35mm-slide_9x37mm\",\n  \"om_8mm-spine_9x66mm\",\n  \"om_file-folder_13x81mm\",\n  \"om_return_16x43mm\",\n  \"om_vhs-spine_18x141mm\",\n  \"om_round_22x24mm\",\n  \"om_multi-purpose_24x44mm\",\n  \"om_address-small_24x83mm\",\n  \"om_jewelry_27x48mm\",\n  \"om_retail-label_32x37mm\",\n  \"om_cut-hanging-15_32x40mm\",\n  \"om_cut-hanging-13_32x78mm\",\n  \"om_address-large_35x83mm\",\n  \"om_euro-name-badge_38x67mm\",\n  \"om_euro-folder-narrow_38x186mm\",\n  \"om_euro-file-folder_39x49mm\",\n  \"om_vhs-face_45x72mm\",\n  \"om_zip-disk_48x55mm\",\n  \"om_diskette_48x64mm\",\n  \"om_media-badge_48x64mm\",\n  \"om_euro-name-badge-large_48x79mm\",\n  \"om_4-part-label_48x96mm\",\n  \"om_shipping_48x96mm\",\n  \"om_top-coated-paper_48x140mm\",\n  \"om_euro-folder-wide_48x186mm\",\n  \"roll_max_48x186mm\",\n  \"roll_min_9x13mm\"\n};\n\n\n//\n// Local functions...\n//\n\nstatic unsigned\tlprint_sii_get_max_width(const char *driver_name);\nstatic void\tlprint_sii_init(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device, lprint_sii_t *siidata);\nstatic bool\tlprint_sii_printfile(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device);\nstatic bool\tlprint_sii_rendjob(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device);\nstatic bool\tlprint_sii_rendpage(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device, unsigned page);\nstatic bool\tlprint_sii_rstartjob(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device);\nstatic bool\tlprint_sii_rstartpage(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device, unsigned page);\nstatic bool\tlprint_sii_rwriteline(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device, unsigned y, const unsigned char *line);\n\n\n//\n// 'lprintSII()' - Initialize the SII driver.\n//\n\nbool\t\t\t\t\t// O - `true` on success, `false` on error\nlprintSII(\n    pappl_system_t         *system,\t// I - System\n    const char             *driver_name,// I - Driver name\n    const char             *device_uri,\t// I - Device URI\n    const char             *device_id,\t// I - 1284 device ID\n    pappl_pr_driver_data_t *data,\t// I - Pointer to driver data\n    ipp_t                  **attrs,\t// O - Pointer to driver attributes\n    void                   *cbdata)\t// I - Callback data (not used)\n{\n  // Print callbacks...\n  data->printfile_cb  = lprint_sii_printfile;\n  data->rendjob_cb    = lprint_sii_rendjob;\n  data->rendpage_cb   = lprint_sii_rendpage;\n  data->rstartjob_cb  = lprint_sii_rstartjob;\n  data->rstartpage_cb = lprint_sii_rstartpage;\n  data->rwriteline_cb = lprint_sii_rwriteline;\n\n  // Vendor-specific format...\n  data->format = LPRINT_SLP_MIMETYPE;\n\n  // Set resolution...\n  data->num_resolution = 1;\n\n  if (strstr(driver_name, \"_203dpi\") != NULL)\n    data->x_resolution[0] = data->y_resolution[0] = 203;\n  else\n    data->x_resolution[0] = data->y_resolution[0] = 300;\n\n  data->x_default = data->y_default = data->x_resolution[0];\n\n  // Basically borderless...\n  data->left_right = 1;\n  data->bottom_top = 1;\n\n  // Supported media...\n  data->num_media = (int)(sizeof(lprint_sii_media) / sizeof(lprint_sii_media[0]));\n  memcpy(data->media, lprint_sii_media, sizeof(lprint_sii_media));\n\n  data->num_source = 1;\n  data->source[0]  = \"main-roll\";\n\n  papplCopyString(data->media_ready[0].size_name, \"om_address-small_24x83mm\", sizeof(data->media_ready[0].size_name));\n  papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n\n  data->num_type = 1;\n  data->type[0]  = \"labels\";\n\n  // Darkness/density settings...\n  data->darkness_configured = 50;\n  data->darkness_supported  = 3;\n\n  return (true);\n}\n\n\n//\n// 'lprint_sii_get_max_width()' - Get the maximum width in dots.\n//\n\nstatic unsigned\t\t\t\t// O - Maximum width in dots\nlprint_sii_get_max_width(\n    const char *driver_name)\t\t// I - Driver name\n{\n  switch (atoi(driver_name + 7))\n  {\n    case 100 :\n    case 410 :\n\treturn (192);\n\tbreak;\n\n    case 200 :\n    case 240 :\n    case 420 :\n    case 430 :\n        return (384);\n        break;\n\n    default :\n        return (576);\n        break;\n  }\n}\n\n\n//\n// 'lprint_sii_init()' - Initialize siidata driver data based on the driver name...\n//\n\nstatic void\nlprint_sii_init(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    lprint_sii_t       *siidata)\t// O - Driver data\n{\n  const char\t*driver_name = papplPrinterGetDriverName(papplJobGetPrinter(job));\n\t\t\t\t\t// Driver name\n\n\n  (void)options;\n\n  // Initialize driver data and save it...\n  siidata->max_width = lprint_sii_get_max_width(driver_name);\n  switch (atoi(driver_name + 7))\n  {\n    case 100 :\n    case 410 :\n\t// Reset printer...\n\tpapplDevicePrintf(device, \"%c\", LPRINT_SLP_CMD_RESET);\n\tpapplDeviceFlush(device);\n\tsleep(3);\n\tbreak;\n\n    default :\n        // Nothing else to do...\n        break;\n  }\n\n  papplJobSetData(job, siidata);\n}\n\n\n//\n// 'lprint_sii_printfile()' - Print a file.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_printfile(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device)\t\t// I - Output device\n{\n  int\t\tfd;\t\t\t// Input file\n  ssize_t\tbytes;\t\t\t// Bytes read/written\n  char\t\tbuffer[65536];\t\t// Read/write buffer\n  lprint_sii_t\tsiidata;\t\t// Driver data\n\n\n  // Initialize driver data...\n  lprint_sii_init(job, options, device, &siidata);\n\n  // Copy the raw file...\n  papplJobSetImpressions(job, 1);\n\n  if ((fd = open(papplJobGetFilename(job), O_RDONLY)) < 0)\n  {\n    papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to open print file \\\"%s\\\": %s\", papplJobGetFilename(job), strerror(errno));\n    return (false);\n  }\n\n  while ((bytes = read(fd, buffer, sizeof(buffer))) > 0)\n  {\n    if (papplDeviceWrite(device, buffer, (size_t)bytes) < 0)\n    {\n      papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to send %d bytes to printer.\", (int)bytes);\n      close(fd);\n      return (false);\n    }\n  }\n  close(fd);\n\n  papplJobSetImpressionsCompleted(job, 1);\n\n  return (true);\n}\n\n\n//\n// 'lprint_sii_rend()' - End a job.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_rendjob(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device)\t\t// I - Output device\n{\n  lprint_sii_t\t\t*siidata = (lprint_sii_t *)papplJobGetData(job);\n\t\t\t\t\t// SII driver data\n\n  (void)options;\n\n  free(siidata);\n  papplJobSetData(job, NULL);\n\n  return (true);\n}\n\n\n//\n// 'lprint_sii_rendpage()' - End a page.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_rendpage(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    unsigned           page)\t\t// I - Page number\n{\n  lprint_sii_t\t*siidata = (lprint_sii_t *)papplJobGetData(job);\n\t\t\t\t\t// SII driver data\n\n\n  (void)page;\n\n  // Write last line\n  lprint_sii_rwriteline(job, options, device, options->header.cupsHeight, NULL);\n\n  // Eject\n  papplDevicePrintf(device, \"%c\", LPRINT_SLP_CMD_FORMFEED);\n  papplDeviceFlush(device);\n\n  // Free memory and return...\n  lprintDitherFree(&siidata->dither);\n\n  return (true);\n}\n\n\n//\n// 'lprint_sii_rstartjob()' - Start a job.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_rstartjob(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device)\t\t// I - Output device\n{\n  lprint_sii_t\t\t*siidata = (lprint_sii_t *)calloc(1, sizeof(lprint_sii_t));\n\t\t\t\t\t// SII driver data\n\n\n  (void)options;\n\n  // Initialize driver data...\n  lprint_sii_init(job, options, device, siidata);\n\n  return (true);\n}\n\n\n//\n// 'lprint_sii_rstartpage()' - Start a page.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_rstartpage(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    unsigned           page)\t\t// I - Page number\n{\n  lprint_sii_t *siidata = (lprint_sii_t *)papplJobGetData(job);\n\t\t\t\t\t// SII driver data\n  const char\t*driver_name = papplPrinterGetDriverName(papplJobGetPrinter(job));\n\t\t\t\t\t// Driver name\n  int\t\tdarkness;\t\t// Combined density\n\n\n\n  (void)page;\n\n  // Initialize the dither buffer and blanks count...\n  if (!lprintDitherAlloc(&siidata->dither, job, options, CUPS_CSPACE_K, options->header.HWResolution[0] == 300 ? 1.2 : 1.0))\n    return (false);\n\n  papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_MARGIN, (int)(12.7 * (lprint_sii_get_max_width(driver_name) - options->header.cupsWidth) / options->header.HWResolution[0]));\n\n  siidata->blanks = 0;\n\n  // Set darkness...\n  if ((darkness = options->darkness_configured + options->print_darkness) < 0)\n    darkness = 0;\n  else if (darkness > 100)\n    darkness = 100;\n\n  papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_DENSITY, 3 * darkness / 100);\n\n  // Set quality...\n  switch (atoi(driver_name + 7))\n  {\n    case 100 :\n    case 200 :\n    case 240 :\n    case 410 :\n    case 420 :\n    case 430 :\n        papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_FINEMODE, options->print_quality == IPP_QUALITY_HIGH ? 0x01 : 0x00);\n        break;\n\n    default :\n        papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_SETSPEED, options->print_quality == IPP_QUALITY_HIGH ? 0x02 : 0x00);\n        break;\n  }\n\n  return (true);\n}\n\n\n//\n// 'lprint_sii_rwriteline()' - Write a raster line.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_rwriteline(\n    pappl_job_t         *job,\t\t// I - Job\n    pappl_pr_options_t  *options,\t// I - Job options\n    pappl_device_t      *device,\t// I - Output device\n    unsigned            y,\t\t// I - Line number\n    const unsigned char *line)\t\t// I - Line\n{\n  lprint_sii_t\t\t*siidata = (lprint_sii_t *)papplJobGetData(job);\n\t\t\t\t\t// SII driver data\n\n\n  // Dither...\n  if (!lprintDitherLine(&siidata->dither, y, line))\n    return (true);\n\n  if (!siidata->dither.output[0] && !memcmp(siidata->dither.output, siidata->dither.output + 1, siidata->dither.out_width - 1))\n  {\n    // Skip blank lines...\n    siidata->blanks ++;\n    return (true);\n  }\n\n  // Feed past any blank lines...\n  while (siidata->blanks > 0)\n  {\n    if (siidata->blanks == 1)\n    {\n      papplDevicePuts(device, \"\\n\");\n      siidata->blanks = 0;\n    }\n    else if (siidata->blanks < 255)\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)siidata->blanks);\n      siidata->blanks = 0;\n    }\n    else\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)255);\n      siidata->blanks -= 255;\n    }\n  }\n\n  // Output bitmap data...\n  papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_PRINT, (char)siidata->dither.out_width);\n  papplDeviceWrite(device, siidata->dither.output, siidata->dither.out_width);\n\n  return (true);\n}\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 1,
+    "end_line": 458,
+    "code": "//\n// Seiko Instruments, Inc. driver for LPrint, a Label Printer Application\n//\n// Copyright \u00a9\u00a02023 by Michael R Sweet.\n//\n// Licensed under Apache License v2.0.  See the file \"LICENSE\" for more\n// information.\n//\n\n#include \"lprint.h\"\n\n\n//\n// Local types...\n//\n\nenum lprint_slp_cmd_e\n{\n  LPRINT_SLP_CMD_NOP = 0x00,\n  LPRINT_SLP_CMD_STATUS,\n  LPRINT_SLP_CMD_VERSION,\n  LPRINT_SLP_CMD_BAUDRATE,\n  LPRINT_SLP_CMD_PRINT,\n  LPRINT_SLP_CMD_PRINTRLE,\n  LPRINT_SLP_CMD_MARGIN,\n  LPRINT_SLP_CMD_REPEAT,\n  LPRINT_SLP_CMD_TAB = 0x09,\n  LPRINT_SLP_CMD_LINEFEED,\n  LPRINT_SLP_CMD_VERTTAB,\n  LPRINT_SLP_CMD_FORMFEED,\n  LPRINT_SLP_CMD_SETSPEED,\n  LPRINT_SLP_CMD_DENSITY,\n  LPRINT_SLP_CMD_RESET,\n  LPRINT_SLP_CMD_MODEL = 0x12,\n  LPRINT_SLP_CMD_INDENT = 0x16,\n  LPRINT_SLP_CMD_FINEMODE,\n  LPRINT_SLP_CMD_SETSERIALNUM = 0x1B,\n  LPRINT_SLP_CMD_CHECK = 0xA5\n};\n\ntypedef struct lprint_sii_s\t\t// SII driver data\n{\n  unsigned\tmax_width;\t\t// Maximum width in dots\n  int\t\tblanks;\t\t\t// Blank lines\n  lprint_dither_t dither;\t\t// Dither buffer\n} lprint_sii_t;\n\n\n//\n// Local globals...\n//\n\nstatic const char * const lprint_sii_media[] =\n{\t\t\t\t\t// Supported media sizes for labels\n  \"om_35mm-slide_9x37mm\",\n  \"om_8mm-spine_9x66mm\",\n  \"om_file-folder_13x81mm\",\n  \"om_return_16x43mm\",\n  \"om_vhs-spine_18x141mm\",\n  \"om_round_22x24mm\",\n  \"om_multi-purpose_24x44mm\",\n  \"om_address-small_24x83mm\",\n  \"om_jewelry_27x48mm\",\n  \"om_retail-label_32x37mm\",\n  \"om_cut-hanging-15_32x40mm\",\n  \"om_cut-hanging-13_32x78mm\",\n  \"om_address-large_35x83mm\",\n  \"om_euro-name-badge_38x67mm\",\n  \"om_euro-folder-narrow_38x186mm\",\n  \"om_euro-file-folder_39x49mm\",\n  \"om_vhs-face_45x72mm\",\n  \"om_zip-disk_48x55mm\",\n  \"om_diskette_48x64mm\",\n  \"om_media-badge_48x64mm\",\n  \"om_euro-name-badge-large_48x79mm\",\n  \"om_4-part-label_48x96mm\",\n  \"om_shipping_48x96mm\",\n  \"om_top-coated-paper_48x140mm\",\n  \"om_euro-folder-wide_48x186mm\",\n  \"roll_max_48x186mm\",\n  \"roll_min_9x13mm\"\n};\n\n\n//\n// Local functions...\n//\n\nstatic unsigned\tlprint_sii_get_max_width(const char *driver_name);\nstatic void\tlprint_sii_init(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device, lprint_sii_t *siidata);\nstatic bool\tlprint_sii_printfile(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device);\nstatic bool\tlprint_sii_rendjob(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device);\nstatic bool\tlprint_sii_rendpage(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device, unsigned page);\nstatic bool\tlprint_sii_rstartjob(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device);\nstatic bool\tlprint_sii_rstartpage(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device, unsigned page);\nstatic bool\tlprint_sii_rwriteline(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device, unsigned y, const unsigned char *line);\n\n\n//\n// 'lprintSII()' - Initialize the SII driver.\n//\n\nbool\t\t\t\t\t// O - `true` on success, `false` on error\nlprintSII(\n    pappl_system_t         *system,\t// I - System\n    const char             *driver_name,// I - Driver name\n    const char             *device_uri,\t// I - Device URI\n    const char             *device_id,\t// I - 1284 device ID\n    pappl_pr_driver_data_t *data,\t// I - Pointer to driver data\n    ipp_t                  **attrs,\t// O - Pointer to driver attributes\n    void                   *cbdata)\t// I - Callback data (not used)\n{\n  // Print callbacks...\n  data->printfile_cb  = lprint_sii_printfile;\n  data->rendjob_cb    = lprint_sii_rendjob;\n  data->rendpage_cb   = lprint_sii_rendpage;\n  data->rstartjob_cb  = lprint_sii_rstartjob;\n  data->rstartpage_cb = lprint_sii_rstartpage;\n  data->rwriteline_cb = lprint_sii_rwriteline;\n\n  // Vendor-specific format...\n  data->format = LPRINT_SLP_MIMETYPE;\n\n  // Set resolution...\n  data->num_resolution = 1;\n\n  if (strstr(driver_name, \"_203dpi\") != NULL)\n    data->x_resolution[0] = data->y_resolution[0] = 203;\n  else\n    data->x_resolution[0] = data->y_resolution[0] = 300;\n\n  data->x_default = data->y_default = data->x_resolution[0];\n\n  // Basically borderless...\n  data->left_right = 1;\n  data->bottom_top = 1;\n\n  // Supported media...\n  data->num_media = (int)(sizeof(lprint_sii_media) / sizeof(lprint_sii_media[0]));\n  memcpy(data->media, lprint_sii_media, sizeof(lprint_sii_media));\n\n  data->num_source = 1;\n  data->source[0]  = \"main-roll\";\n\n  papplCopyString(data->media_ready[0].size_name, \"om_address-small_24x83mm\", sizeof(data->media_ready[0].size_name));\n  papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n\n  data->num_type = 1;\n  data->type[0]  = \"labels\";\n\n  // Darkness/density settings...\n  data->darkness_configured = 50;\n  data->darkness_supported  = 3;\n\n  return (true);\n}\n\n\n//\n// 'lprint_sii_get_max_width()' - Get the maximum width in dots.\n//\n\nstatic unsigned\t\t\t\t// O - Maximum width in dots\nlprint_sii_get_max_width(\n    const char *driver_name)\t\t// I - Driver name\n{\n  switch (atoi(driver_name + 7))\n  {\n    case 100 :\n    case 410 :\n\treturn (192);\n\tbreak;\n\n    case 200 :\n    case 240 :\n    case 420 :\n    case 430 :\n        return (384);\n        break;\n\n    default :\n        return (576);\n        break;\n  }\n}\n\n\n//\n// 'lprint_sii_init()' - Initialize siidata driver data based on the driver name...\n//\n\nstatic void\nlprint_sii_init(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    lprint_sii_t       *siidata)\t// O - Driver data\n{\n  const char\t*driver_name = papplPrinterGetDriverName(papplJobGetPrinter(job));\n\t\t\t\t\t// Driver name\n\n\n  (void)options;\n\n  // Initialize driver data and save it...\n  siidata->max_width = lprint_sii_get_max_width(driver_name);\n  switch (atoi(driver_name + 7))\n  {\n    case 100 :\n    case 410 :\n\t// Reset printer...\n\tpapplDevicePrintf(device, \"%c\", LPRINT_SLP_CMD_RESET);\n\tpapplDeviceFlush(device);\n\tsleep(3);\n\tbreak;\n\n    default :\n        // Nothing else to do...\n        break;\n  }\n\n  papplJobSetData(job, siidata);\n}\n\n\n//\n// 'lprint_sii_printfile()' - Print a file.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_printfile(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device)\t\t// I - Output device\n{\n  int\t\tfd;\t\t\t// Input file\n  ssize_t\tbytes;\t\t\t// Bytes read/written\n  char\t\tbuffer[65536];\t\t// Read/write buffer\n  lprint_sii_t\tsiidata;\t\t// Driver data\n\n\n  // Initialize driver data...\n  lprint_sii_init(job, options, device, &siidata);\n\n  // Copy the raw file...\n  papplJobSetImpressions(job, 1);\n\n  if ((fd = open(papplJobGetFilename(job), O_RDONLY)) < 0)\n  {\n    papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to open print file \\\"%s\\\": %s\", papplJobGetFilename(job), strerror(errno));\n    return (false);\n  }\n\n  while ((bytes = read(fd, buffer, sizeof(buffer))) > 0)\n  {\n    if (papplDeviceWrite(device, buffer, (size_t)bytes) < 0)\n    {\n      papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to send %d bytes to printer.\", (int)bytes);\n      close(fd);\n      return (false);\n    }\n  }\n  close(fd);\n\n  papplJobSetImpressionsCompleted(job, 1);\n\n  return (true);\n}\n\n\n//\n// 'lprint_sii_rend()' - End a job.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_rendjob(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device)\t\t// I - Output device\n{\n  lprint_sii_t\t\t*siidata = (lprint_sii_t *)papplJobGetData(job);\n\t\t\t\t\t// SII driver data\n\n  (void)options;\n\n  free(siidata);\n  papplJobSetData(job, NULL);\n\n  return (true);\n}\n\n\n//\n// 'lprint_sii_rendpage()' - End a page.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_rendpage(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    unsigned           page)\t\t// I - Page number\n{\n  lprint_sii_t\t*siidata = (lprint_sii_t *)papplJobGetData(job);\n\t\t\t\t\t// SII driver data\n\n\n  (void)page;\n\n  // Write last line\n  lprint_sii_rwriteline(job, options, device, options->header.cupsHeight, NULL);\n\n  // Eject\n  papplDevicePrintf(device, \"%c\", LPRINT_SLP_CMD_FORMFEED);\n  papplDeviceFlush(device);\n\n  // Free memory and return...\n  lprintDitherFree(&siidata->dither);\n\n  return (true);\n}\n\n\n//\n// 'lprint_sii_rstartjob()' - Start a job.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_rstartjob(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device)\t\t// I - Output device\n{\n  lprint_sii_t\t\t*siidata = (lprint_sii_t *)calloc(1, sizeof(lprint_sii_t));\n\t\t\t\t\t// SII driver data\n\n\n  (void)options;\n\n  // Initialize driver data...\n  lprint_sii_init(job, options, device, siidata);\n\n  return (true);\n}\n\n\n//\n// 'lprint_sii_rstartpage()' - Start a page.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_rstartpage(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    unsigned           page)\t\t// I - Page number\n{\n  lprint_sii_t *siidata = (lprint_sii_t *)papplJobGetData(job);\n\t\t\t\t\t// SII driver data\n  const char\t*driver_name = papplPrinterGetDriverName(papplJobGetPrinter(job));\n\t\t\t\t\t// Driver name\n  int\t\tdarkness;\t\t// Combined density\n\n\n\n  (void)page;\n\n  // Initialize the dither buffer and blanks count...\n  if (!lprintDitherAlloc(&siidata->dither, job, options, CUPS_CSPACE_K, options->header.HWResolution[0] == 300 ? 1.2 : 1.0))\n    return (false);\n\n  papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_MARGIN, (int)(12.7 * (lprint_sii_get_max_width(driver_name) - options->header.cupsWidth) / options->header.HWResolution[0]));\n\n  siidata->blanks = 0;\n\n  // Set darkness...\n  if ((darkness = options->darkness_configured + options->print_darkness) < 0)\n    darkness = 0;\n  else if (darkness > 100)\n    darkness = 100;\n\n  papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_DENSITY, 3 * darkness / 100);\n\n  // Set quality...\n  switch (atoi(driver_name + 7))\n  {\n    case 100 :\n    case 200 :\n    case 240 :\n    case 410 :\n    case 420 :\n    case 430 :\n        papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_FINEMODE, options->print_quality == IPP_QUALITY_HIGH ? 0x01 : 0x00);\n        break;\n\n    default :\n        papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_SETSPEED, options->print_quality == IPP_QUALITY_HIGH ? 0x02 : 0x00);\n        break;\n  }\n\n  return (true);\n}\n\n\n//\n// 'lprint_sii_rwriteline()' - Write a raster line.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_rwriteline(\n    pappl_job_t         *job,\t\t// I - Job\n    pappl_pr_options_t  *options,\t// I - Job options\n    pappl_device_t      *device,\t// I - Output device\n    unsigned            y,\t\t// I - Line number\n    const unsigned char *line)\t\t// I - Line\n{\n  lprint_sii_t\t\t*siidata = (lprint_sii_t *)papplJobGetData(job);\n\t\t\t\t\t// SII driver data\n\n\n  // Dither...\n  if (!lprintDitherLine(&siidata->dither, y, line))\n    return (true);\n\n  if (!siidata->dither.output[0] && !memcmp(siidata->dither.output, siidata->dither.output + 1, siidata->dither.out_width - 1))\n  {\n    // Skip blank lines...\n    siidata->blanks ++;\n    return (true);\n  }\n\n  // Feed past any blank lines...\n  while (siidata->blanks > 0)\n  {\n    if (siidata->blanks == 1)\n    {\n      papplDevicePuts(device, \"\\n\");\n      siidata->blanks = 0;\n    }\n    else if (siidata->blanks < 255)\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)siidata->blanks);\n      siidata->blanks = 0;\n    }\n    else\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)255);\n      siidata->blanks -= 255;\n    }\n  }\n\n  // Output bitmap data...\n  papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_PRINT, (char)siidata->dither.out_width);\n  papplDeviceWrite(device, siidata->dither.output, siidata->dither.out_width);\n\n  return (true);\n}\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "static_const_char_pointer_array",
+    "start_line": 1,
+    "end_line": 458,
+    "code": "//\n// Seiko Instruments, Inc. driver for LPrint, a Label Printer Application\n//\n// Copyright \u00a9\u00a02023 by Michael R Sweet.\n//\n// Licensed under Apache License v2.0.  See the file \"LICENSE\" for more\n// information.\n//\n\n#include \"lprint.h\"\n\n\n//\n// Local types...\n//\n\nenum lprint_slp_cmd_e\n{\n  LPRINT_SLP_CMD_NOP = 0x00,\n  LPRINT_SLP_CMD_STATUS,\n  LPRINT_SLP_CMD_VERSION,\n  LPRINT_SLP_CMD_BAUDRATE,\n  LPRINT_SLP_CMD_PRINT,\n  LPRINT_SLP_CMD_PRINTRLE,\n  LPRINT_SLP_CMD_MARGIN,\n  LPRINT_SLP_CMD_REPEAT,\n  LPRINT_SLP_CMD_TAB = 0x09,\n  LPRINT_SLP_CMD_LINEFEED,\n  LPRINT_SLP_CMD_VERTTAB,\n  LPRINT_SLP_CMD_FORMFEED,\n  LPRINT_SLP_CMD_SETSPEED,\n  LPRINT_SLP_CMD_DENSITY,\n  LPRINT_SLP_CMD_RESET,\n  LPRINT_SLP_CMD_MODEL = 0x12,\n  LPRINT_SLP_CMD_INDENT = 0x16,\n  LPRINT_SLP_CMD_FINEMODE,\n  LPRINT_SLP_CMD_SETSERIALNUM = 0x1B,\n  LPRINT_SLP_CMD_CHECK = 0xA5\n};\n\ntypedef struct lprint_sii_s\t\t// SII driver data\n{\n  unsigned\tmax_width;\t\t// Maximum width in dots\n  int\t\tblanks;\t\t\t// Blank lines\n  lprint_dither_t dither;\t\t// Dither buffer\n} lprint_sii_t;\n\n\n//\n// Local globals...\n//\n\nstatic const char * const lprint_sii_media[] =\n{\t\t\t\t\t// Supported media sizes for labels\n  \"om_35mm-slide_9x37mm\",\n  \"om_8mm-spine_9x66mm\",\n  \"om_file-folder_13x81mm\",\n  \"om_return_16x43mm\",\n  \"om_vhs-spine_18x141mm\",\n  \"om_round_22x24mm\",\n  \"om_multi-purpose_24x44mm\",\n  \"om_address-small_24x83mm\",\n  \"om_jewelry_27x48mm\",\n  \"om_retail-label_32x37mm\",\n  \"om_cut-hanging-15_32x40mm\",\n  \"om_cut-hanging-13_32x78mm\",\n  \"om_address-large_35x83mm\",\n  \"om_euro-name-badge_38x67mm\",\n  \"om_euro-folder-narrow_38x186mm\",\n  \"om_euro-file-folder_39x49mm\",\n  \"om_vhs-face_45x72mm\",\n  \"om_zip-disk_48x55mm\",\n  \"om_diskette_48x64mm\",\n  \"om_media-badge_48x64mm\",\n  \"om_euro-name-badge-large_48x79mm\",\n  \"om_4-part-label_48x96mm\",\n  \"om_shipping_48x96mm\",\n  \"om_top-coated-paper_48x140mm\",\n  \"om_euro-folder-wide_48x186mm\",\n  \"roll_max_48x186mm\",\n  \"roll_min_9x13mm\"\n};\n\n\n//\n// Local functions...\n//\n\nstatic unsigned\tlprint_sii_get_max_width(const char *driver_name);\nstatic void\tlprint_sii_init(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device, lprint_sii_t *siidata);\nstatic bool\tlprint_sii_printfile(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device);\nstatic bool\tlprint_sii_rendjob(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device);\nstatic bool\tlprint_sii_rendpage(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device, unsigned page);\nstatic bool\tlprint_sii_rstartjob(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device);\nstatic bool\tlprint_sii_rstartpage(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device, unsigned page);\nstatic bool\tlprint_sii_rwriteline(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device, unsigned y, const unsigned char *line);\n\n\n//\n// 'lprintSII()' - Initialize the SII driver.\n//\n\nbool\t\t\t\t\t// O - `true` on success, `false` on error\nlprintSII(\n    pappl_system_t         *system,\t// I - System\n    const char             *driver_name,// I - Driver name\n    const char             *device_uri,\t// I - Device URI\n    const char             *device_id,\t// I - 1284 device ID\n    pappl_pr_driver_data_t *data,\t// I - Pointer to driver data\n    ipp_t                  **attrs,\t// O - Pointer to driver attributes\n    void                   *cbdata)\t// I - Callback data (not used)\n{\n  // Print callbacks...\n  data->printfile_cb  = lprint_sii_printfile;\n  data->rendjob_cb    = lprint_sii_rendjob;\n  data->rendpage_cb   = lprint_sii_rendpage;\n  data->rstartjob_cb  = lprint_sii_rstartjob;\n  data->rstartpage_cb = lprint_sii_rstartpage;\n  data->rwriteline_cb = lprint_sii_rwriteline;\n\n  // Vendor-specific format...\n  data->format = LPRINT_SLP_MIMETYPE;\n\n  // Set resolution...\n  data->num_resolution = 1;\n\n  if (strstr(driver_name, \"_203dpi\") != NULL)\n    data->x_resolution[0] = data->y_resolution[0] = 203;\n  else\n    data->x_resolution[0] = data->y_resolution[0] = 300;\n\n  data->x_default = data->y_default = data->x_resolution[0];\n\n  // Basically borderless...\n  data->left_right = 1;\n  data->bottom_top = 1;\n\n  // Supported media...\n  data->num_media = (int)(sizeof(lprint_sii_media) / sizeof(lprint_sii_media[0]));\n  memcpy(data->media, lprint_sii_media, sizeof(lprint_sii_media));\n\n  data->num_source = 1;\n  data->source[0]  = \"main-roll\";\n\n  papplCopyString(data->media_ready[0].size_name, \"om_address-small_24x83mm\", sizeof(data->media_ready[0].size_name));\n  papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n\n  data->num_type = 1;\n  data->type[0]  = \"labels\";\n\n  // Darkness/density settings...\n  data->darkness_configured = 50;\n  data->darkness_supported  = 3;\n\n  return (true);\n}\n\n\n//\n// 'lprint_sii_get_max_width()' - Get the maximum width in dots.\n//\n\nstatic unsigned\t\t\t\t// O - Maximum width in dots\nlprint_sii_get_max_width(\n    const char *driver_name)\t\t// I - Driver name\n{\n  switch (atoi(driver_name + 7))\n  {\n    case 100 :\n    case 410 :\n\treturn (192);\n\tbreak;\n\n    case 200 :\n    case 240 :\n    case 420 :\n    case 430 :\n        return (384);\n        break;\n\n    default :\n        return (576);\n        break;\n  }\n}\n\n\n//\n// 'lprint_sii_init()' - Initialize siidata driver data based on the driver name...\n//\n\nstatic void\nlprint_sii_init(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    lprint_sii_t       *siidata)\t// O - Driver data\n{\n  const char\t*driver_name = papplPrinterGetDriverName(papplJobGetPrinter(job));\n\t\t\t\t\t// Driver name\n\n\n  (void)options;\n\n  // Initialize driver data and save it...\n  siidata->max_width = lprint_sii_get_max_width(driver_name);\n  switch (atoi(driver_name + 7))\n  {\n    case 100 :\n    case 410 :\n\t// Reset printer...\n\tpapplDevicePrintf(device, \"%c\", LPRINT_SLP_CMD_RESET);\n\tpapplDeviceFlush(device);\n\tsleep(3);\n\tbreak;\n\n    default :\n        // Nothing else to do...\n        break;\n  }\n\n  papplJobSetData(job, siidata);\n}\n\n\n//\n// 'lprint_sii_printfile()' - Print a file.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_printfile(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device)\t\t// I - Output device\n{\n  int\t\tfd;\t\t\t// Input file\n  ssize_t\tbytes;\t\t\t// Bytes read/written\n  char\t\tbuffer[65536];\t\t// Read/write buffer\n  lprint_sii_t\tsiidata;\t\t// Driver data\n\n\n  // Initialize driver data...\n  lprint_sii_init(job, options, device, &siidata);\n\n  // Copy the raw file...\n  papplJobSetImpressions(job, 1);\n\n  if ((fd = open(papplJobGetFilename(job), O_RDONLY)) < 0)\n  {\n    papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to open print file \\\"%s\\\": %s\", papplJobGetFilename(job), strerror(errno));\n    return (false);\n  }\n\n  while ((bytes = read(fd, buffer, sizeof(buffer))) > 0)\n  {\n    if (papplDeviceWrite(device, buffer, (size_t)bytes) < 0)\n    {\n      papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to send %d bytes to printer.\", (int)bytes);\n      close(fd);\n      return (false);\n    }\n  }\n  close(fd);\n\n  papplJobSetImpressionsCompleted(job, 1);\n\n  return (true);\n}\n\n\n//\n// 'lprint_sii_rend()' - End a job.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_rendjob(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device)\t\t// I - Output device\n{\n  lprint_sii_t\t\t*siidata = (lprint_sii_t *)papplJobGetData(job);\n\t\t\t\t\t// SII driver data\n\n  (void)options;\n\n  free(siidata);\n  papplJobSetData(job, NULL);\n\n  return (true);\n}\n\n\n//\n// 'lprint_sii_rendpage()' - End a page.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_rendpage(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    unsigned           page)\t\t// I - Page number\n{\n  lprint_sii_t\t*siidata = (lprint_sii_t *)papplJobGetData(job);\n\t\t\t\t\t// SII driver data\n\n\n  (void)page;\n\n  // Write last line\n  lprint_sii_rwriteline(job, options, device, options->header.cupsHeight, NULL);\n\n  // Eject\n  papplDevicePrintf(device, \"%c\", LPRINT_SLP_CMD_FORMFEED);\n  papplDeviceFlush(device);\n\n  // Free memory and return...\n  lprintDitherFree(&siidata->dither);\n\n  return (true);\n}\n\n\n//\n// 'lprint_sii_rstartjob()' - Start a job.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_rstartjob(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device)\t\t// I - Output device\n{\n  lprint_sii_t\t\t*siidata = (lprint_sii_t *)calloc(1, sizeof(lprint_sii_t));\n\t\t\t\t\t// SII driver data\n\n\n  (void)options;\n\n  // Initialize driver data...\n  lprint_sii_init(job, options, device, siidata);\n\n  return (true);\n}\n\n\n//\n// 'lprint_sii_rstartpage()' - Start a page.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_rstartpage(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    unsigned           page)\t\t// I - Page number\n{\n  lprint_sii_t *siidata = (lprint_sii_t *)papplJobGetData(job);\n\t\t\t\t\t// SII driver data\n  const char\t*driver_name = papplPrinterGetDriverName(papplJobGetPrinter(job));\n\t\t\t\t\t// Driver name\n  int\t\tdarkness;\t\t// Combined density\n\n\n\n  (void)page;\n\n  // Initialize the dither buffer and blanks count...\n  if (!lprintDitherAlloc(&siidata->dither, job, options, CUPS_CSPACE_K, options->header.HWResolution[0] == 300 ? 1.2 : 1.0))\n    return (false);\n\n  papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_MARGIN, (int)(12.7 * (lprint_sii_get_max_width(driver_name) - options->header.cupsWidth) / options->header.HWResolution[0]));\n\n  siidata->blanks = 0;\n\n  // Set darkness...\n  if ((darkness = options->darkness_configured + options->print_darkness) < 0)\n    darkness = 0;\n  else if (darkness > 100)\n    darkness = 100;\n\n  papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_DENSITY, 3 * darkness / 100);\n\n  // Set quality...\n  switch (atoi(driver_name + 7))\n  {\n    case 100 :\n    case 200 :\n    case 240 :\n    case 410 :\n    case 420 :\n    case 430 :\n        papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_FINEMODE, options->print_quality == IPP_QUALITY_HIGH ? 0x01 : 0x00);\n        break;\n\n    default :\n        papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_SETSPEED, options->print_quality == IPP_QUALITY_HIGH ? 0x02 : 0x00);\n        break;\n  }\n\n  return (true);\n}\n\n\n//\n// 'lprint_sii_rwriteline()' - Write a raster line.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_rwriteline(\n    pappl_job_t         *job,\t\t// I - Job\n    pappl_pr_options_t  *options,\t// I - Job options\n    pappl_device_t      *device,\t// I - Output device\n    unsigned            y,\t\t// I - Line number\n    const unsigned char *line)\t\t// I - Line\n{\n  lprint_sii_t\t\t*siidata = (lprint_sii_t *)papplJobGetData(job);\n\t\t\t\t\t// SII driver data\n\n\n  // Dither...\n  if (!lprintDitherLine(&siidata->dither, y, line))\n    return (true);\n\n  if (!siidata->dither.output[0] && !memcmp(siidata->dither.output, siidata->dither.output + 1, siidata->dither.out_width - 1))\n  {\n    // Skip blank lines...\n    siidata->blanks ++;\n    return (true);\n  }\n\n  // Feed past any blank lines...\n  while (siidata->blanks > 0)\n  {\n    if (siidata->blanks == 1)\n    {\n      papplDevicePuts(device, \"\\n\");\n      siidata->blanks = 0;\n    }\n    else if (siidata->blanks < 255)\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)siidata->blanks);\n      siidata->blanks = 0;\n    }\n    else\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)255);\n      siidata->blanks -= 255;\n    }\n  }\n\n  // Output bitmap data...\n  papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_PRINT, (char)siidata->dither.out_width);\n  papplDeviceWrite(device, siidata->dither.output, siidata->dither.out_width);\n\n  return (true);\n}\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "include",
+    "start_line": 10,
+    "end_line": 11,
+    "code": "nclude \"lprint.h\"\n\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "enum",
+    "start_line": 17,
+    "end_line": 39,
+    "code": "um lprint_slp_cmd_e\n{\n  LPRINT_SLP_CMD_NOP = 0x00,\n  LPRINT_SLP_CMD_STATUS,\n  LPRINT_SLP_CMD_VERSION,\n  LPRINT_SLP_CMD_BAUDRATE,\n  LPRINT_SLP_CMD_PRINT,\n  LPRINT_SLP_CMD_PRINTRLE,\n  LPRINT_SLP_CMD_MARGIN,\n  LPRINT_SLP_CMD_REPEAT,\n  LPRINT_SLP_CMD_TAB = 0x09,\n  LPRINT_SLP_CMD_LINEFEED,\n  LPRINT_SLP_CMD_VERTTAB,\n  LPRINT_SLP_CMD_FORMFEED,\n  LPRINT_SLP_CMD_SETSPEED,\n  LPRINT_SLP_CMD_DENSITY,\n  LPRINT_SLP_CMD_RESET,\n  LPRINT_SLP_CMD_MODEL = 0x12,\n  LPRINT_SLP_CMD_INDENT = 0x16,\n  LPRINT_SLP_CMD_FINEMODE,\n  LPRINT_SLP_CMD_SETSERIALNUM = 0x1B,\n  LPRINT_SLP_CMD_CHECK = 0xA5\n};\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "typedef",
+    "start_line": 41,
+    "end_line": 46,
+    "code": "pedef struct lprint_sii_s\t\t// SII driver data\n{\n  unsigned\tmax_width;\t\t// Maximum width in dots\n  int\t\tblanks;\t\t\t// Blank lines\n  lprint_dither_t dither;\t\t// Dither buffer\n} lprint_sii_t;\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct",
+    "name": "lprint_sii_s",
+    "hierarchy": "lprint_sii_s",
+    "start_line": 41,
+    "end_line": 46,
+    "code": "ruct lprint_sii_s\t\t// SII driver data\n{\n  unsigned\tmax_width;\t\t// Maximum width in dots\n  int\t\tblanks;\t\t\t// Blank lines\n  lprint_dither_t dither;\t\t// Dither buffer\n} l",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "global_variable",
+    "start_line": 53,
+    "end_line": 82,
+    "code": "atic const char * const lprint_sii_media[] =\n{\t\t\t\t\t// Supported media sizes for labels\n  \"om_35mm-slide_9x37mm\",\n  \"om_8mm-spine_9x66mm\",\n  \"om_file-folder_13x81mm\",\n  \"om_return_16x43mm\",\n  \"om_vhs-spine_18x141mm\",\n  \"om_round_22x24mm\",\n  \"om_multi-purpose_24x44mm\",\n  \"om_address-small_24x83mm\",\n  \"om_jewelry_27x48mm\",\n  \"om_retail-label_32x37mm\",\n  \"om_cut-hanging-15_32x40mm\",\n  \"om_cut-hanging-13_32x78mm\",\n  \"om_address-large_35x83mm\",\n  \"om_euro-name-badge_38x67mm\",\n  \"om_euro-folder-narrow_38x186mm\",\n  \"om_euro-file-folder_39x49mm\",\n  \"om_vhs-face_45x72mm\",\n  \"om_zip-disk_48x55mm\",\n  \"om_diskette_48x64mm\",\n  \"om_media-badge_48x64mm\",\n  \"om_euro-name-badge-large_48x79mm\",\n  \"om_4-part-label_48x96mm\",\n  \"om_shipping_48x96mm\",\n  \"om_top-coated-paper_48x140mm\",\n  \"om_euro-folder-wide_48x186mm\",\n  \"roll_max_48x186mm\",\n  \"roll_min_9x13mm\"\n};\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function",
+    "start_line": 103,
+    "end_line": 156,
+    "name": "lprintSII",
+    "parent": null,
+    "hierarchy": "lprintSII",
+    "code": "ol\t\t\t\t\t// O - `true` on success, `false` on error\nlprintSII(\n    pappl_system_t         *system,\t// I - System\n    const char             *driver_name,// I - Driver name\n    const char             *device_uri,\t// I - Device URI\n    const char             *device_id,\t// I - 1284 device ID\n    pappl_pr_driver_data_t *data,\t// I - Pointer to driver data\n    ipp_t                  **attrs,\t// O - Pointer to driver attributes\n    void                   *cbdata)\t// I - Callback data (not used)\n{\n  // Print callbacks...\n  data->printfile_cb  = lprint_sii_printfile;\n  data->rendjob_cb    = lprint_sii_rendjob;\n  data->rendpage_cb   = lprint_sii_rendpage;\n  data->rstartjob_cb  = lprint_sii_rstartjob;\n  data->rstartpage_cb = lprint_sii_rstartpage;\n  data->rwriteline_cb = lprint_sii_rwriteline;\n\n  // Vendor-specific format...\n  data->format = LPRINT_SLP_MIMETYPE;\n\n  // Set resolution...\n  data->num_resolution = 1;\n\n  if (strstr(driver_name, \"_203dpi\") != NULL)\n    data->x_resolution[0] = data->y_resolution[0] = 203;\n  else\n    data->x_resolution[0] = data->y_resolution[0] = 300;\n\n  data->x_default = data->y_default = data->x_resolution[0];\n\n  // Basically borderless...\n  data->left_right = 1;\n  data->bottom_top = 1;\n\n  // Supported media...\n  data->num_media = (int)(sizeof(lprint_sii_media) / sizeof(lprint_sii_media[0]));\n  memcpy(data->media, lprint_sii_media, sizeof(lprint_sii_media));\n\n  data->num_source = 1;\n  data->source[0]  = \"main-roll\";\n\n  papplCopyString(data->media_ready[0].size_name, \"om_address-small_24x83mm\", sizeof(data->media_ready[0].size_name));\n  papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n\n  data->num_type = 1;\n  data->type[0]  = \"labels\";\n\n  // Darkness/density settings...\n  data->darkness_configured = 50;\n  data->darkness_supported  = 3;\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 103,
+    "end_line": 156,
+    "code": "ol\t\t\t\t\t// O - `true` on success, `false` on error\nlprintSII(\n    pappl_system_t         *system,\t// I - System\n    const char             *driver_name,// I - Driver name\n    const char             *device_uri,\t// I - Device URI\n    const char             *device_id,\t// I - 1284 device ID\n    pappl_pr_driver_data_t *data,\t// I - Pointer to driver data\n    ipp_t                  **attrs,\t// O - Pointer to driver attributes\n    void                   *cbdata)\t// I - Callback data (not used)\n{\n  // Print callbacks...\n  data->printfile_cb  = lprint_sii_printfile;\n  data->rendjob_cb    = lprint_sii_rendjob;\n  data->rendpage_cb   = lprint_sii_rendpage;\n  data->rstartjob_cb  = lprint_sii_rstartjob;\n  data->rstartpage_cb = lprint_sii_rstartpage;\n  data->rwriteline_cb = lprint_sii_rwriteline;\n\n  // Vendor-specific format...\n  data->format = LPRINT_SLP_MIMETYPE;\n\n  // Set resolution...\n  data->num_resolution = 1;\n\n  if (strstr(driver_name, \"_203dpi\") != NULL)\n    data->x_resolution[0] = data->y_resolution[0] = 203;\n  else\n    data->x_resolution[0] = data->y_resolution[0] = 300;\n\n  data->x_default = data->y_default = data->x_resolution[0];\n\n  // Basically borderless...\n  data->left_right = 1;\n  data->bottom_top = 1;\n\n  // Supported media...\n  data->num_media = (int)(sizeof(lprint_sii_media) / sizeof(lprint_sii_media[0]));\n  memcpy(data->media, lprint_sii_media, sizeof(lprint_sii_media));\n\n  data->num_source = 1;\n  data->source[0]  = \"main-roll\";\n\n  papplCopyString(data->media_ready[0].size_name, \"om_address-small_24x83mm\", sizeof(data->media_ready[0].size_name));\n  papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n\n  data->num_type = 1;\n  data->type[0]  = \"labels\";\n\n  // Darkness/density settings...\n  data->darkness_configured = 50;\n  data->darkness_supported  = 3;\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 103,
+    "end_line": 156,
+    "code": "ol\t\t\t\t\t// O - `true` on success, `false` on error\nlprintSII(\n    pappl_system_t         *system,\t// I - System\n    const char             *driver_name,// I - Driver name\n    const char             *device_uri,\t// I - Device URI\n    const char             *device_id,\t// I - 1284 device ID\n    pappl_pr_driver_data_t *data,\t// I - Pointer to driver data\n    ipp_t                  **attrs,\t// O - Pointer to driver attributes\n    void                   *cbdata)\t// I - Callback data (not used)\n{\n  // Print callbacks...\n  data->printfile_cb  = lprint_sii_printfile;\n  data->rendjob_cb    = lprint_sii_rendjob;\n  data->rendpage_cb   = lprint_sii_rendpage;\n  data->rstartjob_cb  = lprint_sii_rstartjob;\n  data->rstartpage_cb = lprint_sii_rstartpage;\n  data->rwriteline_cb = lprint_sii_rwriteline;\n\n  // Vendor-specific format...\n  data->format = LPRINT_SLP_MIMETYPE;\n\n  // Set resolution...\n  data->num_resolution = 1;\n\n  if (strstr(driver_name, \"_203dpi\") != NULL)\n    data->x_resolution[0] = data->y_resolution[0] = 203;\n  else\n    data->x_resolution[0] = data->y_resolution[0] = 300;\n\n  data->x_default = data->y_default = data->x_resolution[0];\n\n  // Basically borderless...\n  data->left_right = 1;\n  data->bottom_top = 1;\n\n  // Supported media...\n  data->num_media = (int)(sizeof(lprint_sii_media) / sizeof(lprint_sii_media[0]));\n  memcpy(data->media, lprint_sii_media, sizeof(lprint_sii_media));\n\n  data->num_source = 1;\n  data->source[0]  = \"main-roll\";\n\n  papplCopyString(data->media_ready[0].size_name, \"om_address-small_24x83mm\", sizeof(data->media_ready[0].size_name));\n  papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n\n  data->num_type = 1;\n  data->type[0]  = \"labels\";\n\n  // Darkness/density settings...\n  data->darkness_configured = 50;\n  data->darkness_supported  = 3;\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 112,
+    "end_line": 156,
+    "code": "  // Print callbacks...\n  data->printfile_cb  = lprint_sii_printfile;\n  data->rendjob_cb    = lprint_sii_rendjob;\n  data->rendpage_cb   = lprint_sii_rendpage;\n  data->rstartjob_cb  = lprint_sii_rstartjob;\n  data->rstartpage_cb = lprint_sii_rstartpage;\n  data->rwriteline_cb = lprint_sii_rwriteline;\n\n  // Vendor-specific format...\n  data->format = LPRINT_SLP_MIMETYPE;\n\n  // Set resolution...\n  data->num_resolution = 1;\n\n  if (strstr(driver_name, \"_203dpi\") != NULL)\n    data->x_resolution[0] = data->y_resolution[0] = 203;\n  else\n    data->x_resolution[0] = data->y_resolution[0] = 300;\n\n  data->x_default = data->y_default = data->x_resolution[0];\n\n  // Basically borderless...\n  data->left_right = 1;\n  data->bottom_top = 1;\n\n  // Supported media...\n  data->num_media = (int)(sizeof(lprint_sii_media) / sizeof(lprint_sii_media[0]));\n  memcpy(data->media, lprint_sii_media, sizeof(lprint_sii_media));\n\n  data->num_source = 1;\n  data->source[0]  = \"main-roll\";\n\n  papplCopyString(data->media_ready[0].size_name, \"om_address-small_24x83mm\", sizeof(data->media_ready[0].size_name));\n  papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n\n  data->num_type = 1;\n  data->type[0]  = \"labels\";\n\n  // Darkness/density settings...\n  data->darkness_configured = 50;\n  data->darkness_supported  = 3;\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 112,
+    "end_line": 156,
+    "code": "  // Print callbacks...\n  data->printfile_cb  = lprint_sii_printfile;\n  data->rendjob_cb    = lprint_sii_rendjob;\n  data->rendpage_cb   = lprint_sii_rendpage;\n  data->rstartjob_cb  = lprint_sii_rstartjob;\n  data->rstartpage_cb = lprint_sii_rstartpage;\n  data->rwriteline_cb = lprint_sii_rwriteline;\n\n  // Vendor-specific format...\n  data->format = LPRINT_SLP_MIMETYPE;\n\n  // Set resolution...\n  data->num_resolution = 1;\n\n  if (strstr(driver_name, \"_203dpi\") != NULL)\n    data->x_resolution[0] = data->y_resolution[0] = 203;\n  else\n    data->x_resolution[0] = data->y_resolution[0] = 300;\n\n  data->x_default = data->y_default = data->x_resolution[0];\n\n  // Basically borderless...\n  data->left_right = 1;\n  data->bottom_top = 1;\n\n  // Supported media...\n  data->num_media = (int)(sizeof(lprint_sii_media) / sizeof(lprint_sii_media[0]));\n  memcpy(data->media, lprint_sii_media, sizeof(lprint_sii_media));\n\n  data->num_source = 1;\n  data->source[0]  = \"main-roll\";\n\n  papplCopyString(data->media_ready[0].size_name, \"om_address-small_24x83mm\", sizeof(data->media_ready[0].size_name));\n  papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n\n  data->num_type = 1;\n  data->type[0]  = \"labels\";\n\n  // Darkness/density settings...\n  data->darkness_configured = 50;\n  data->darkness_supported  = 3;\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 114,
+    "end_line": 114,
+    "code": "ta->printfile_cb  = lprint_sii_printfile;\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 114,
+    "end_line": 114,
+    "code": "ta->printfile_cb  = lprint_sii_printfile;\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 115,
+    "end_line": 115,
+    "code": "ta->rendjob_cb    = lprint_sii_rendjob;\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 115,
+    "end_line": 115,
+    "code": "ta->rendjob_cb    = lprint_sii_rendjob;\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 116,
+    "end_line": 116,
+    "code": "ta->rendpage_cb   = lprint_sii_rendpage;\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 116,
+    "end_line": 116,
+    "code": "ta->rendpage_cb   = lprint_sii_rendpage;\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 117,
+    "end_line": 117,
+    "code": "ta->rstartjob_cb  = lprint_sii_rstartjob;\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 117,
+    "end_line": 117,
+    "code": "ta->rstartjob_cb  = lprint_sii_rstartjob;\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 118,
+    "end_line": 118,
+    "code": "ta->rstartpage_cb = lprint_sii_rstartpage;\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 118,
+    "end_line": 118,
+    "code": "ta->rstartpage_cb = lprint_sii_rstartpage;\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 119,
+    "end_line": 119,
+    "code": "ta->rwriteline_cb = lprint_sii_rwriteline;\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 119,
+    "end_line": 119,
+    "code": "ta->rwriteline_cb = lprint_sii_rwriteline;\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 122,
+    "end_line": 122,
+    "code": "ta->format = LPRINT_SLP_MIMETYPE;\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 122,
+    "end_line": 122,
+    "code": "ta->format = LPRINT_SLP_MIMETYPE;\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 125,
+    "end_line": 125,
+    "code": "ta->num_resolution = 1;\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 125,
+    "end_line": 125,
+    "code": "ta->num_resolution = 1;\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 127,
+    "end_line": 130,
+    "code": " (strstr(driver_name, \"_203dpi\") != NULL)\n    data->x_resolution[0] = data->y_resolution[0] = 203;\n  else\n    data->x_resolution[0] = data->y_resolution[0] = 300;\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 127,
+    "end_line": 130,
+    "code": " (strstr(driver_name, \"_203dpi\") != NULL)\n    data->x_resolution[0] = data->y_resolution[0] = 203;\n  else\n    data->x_resolution[0] = data->y_resolution[0] = 300;\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 128,
+    "end_line": 128,
+    "code": "ta->x_resolution[0] = data->y_resolution[0] = 203;\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 128,
+    "end_line": 128,
+    "code": "ta->x_resolution[0] = data->y_resolution[0] = 203;\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 128,
+    "end_line": 128,
+    "code": "ta->y_resolution[0] = 203;\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 129,
+    "end_line": 130,
+    "code": "se\n    data->x_resolution[0] = data->y_resolution[0] = 300;\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 130,
+    "end_line": 130,
+    "code": "ta->x_resolution[0] = data->y_resolution[0] = 300;\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 130,
+    "end_line": 130,
+    "code": "ta->x_resolution[0] = data->y_resolution[0] = 300;\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 130,
+    "end_line": 130,
+    "code": "ta->y_resolution[0] = 300;\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 132,
+    "end_line": 132,
+    "code": "ta->x_default = data->y_default = data->x_resolution[0];\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 132,
+    "end_line": 132,
+    "code": "ta->x_default = data->y_default = data->x_resolution[0];\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 132,
+    "end_line": 132,
+    "code": "ta->y_default = data->x_resolution[0];\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 135,
+    "end_line": 135,
+    "code": "ta->left_right = 1;\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 135,
+    "end_line": 135,
+    "code": "ta->left_right = 1;\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 136,
+    "end_line": 136,
+    "code": "ta->bottom_top = 1;\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 136,
+    "end_line": 136,
+    "code": "ta->bottom_top = 1;\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 139,
+    "end_line": 139,
+    "code": "ta->num_media = (int)(sizeof(lprint_sii_media) / sizeof(lprint_sii_media[0]));\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 139,
+    "end_line": 139,
+    "code": "ta->num_media = (int)(sizeof(lprint_sii_media) / sizeof(lprint_sii_media[0]));\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 139,
+    "end_line": 139,
+    "code": "ta->num_media = (int)(sizeof(lprint_sii_media) / sizeof(lprint_sii_media[0]));\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 139,
+    "end_line": 139,
+    "code": "ta->num_media = (int)(sizeof(lprint_sii_media) / sizeof(lprint_sii_media[0]));\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 142,
+    "end_line": 142,
+    "code": "ta->num_source = 1;\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 142,
+    "end_line": 142,
+    "code": "ta->num_source = 1;\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 143,
+    "end_line": 143,
+    "code": "ta->source[0]  = \"main-roll\";\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 143,
+    "end_line": 143,
+    "code": "ta->source[0]  = \"main-roll\";\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 148,
+    "end_line": 148,
+    "code": "ta->num_type = 1;\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 148,
+    "end_line": 148,
+    "code": "ta->num_type = 1;\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 149,
+    "end_line": 149,
+    "code": "ta->type[0]  = \"labels\";\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 149,
+    "end_line": 149,
+    "code": "ta->type[0]  = \"labels\";\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 152,
+    "end_line": 152,
+    "code": "ta->darkness_configured = 50;\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 152,
+    "end_line": 152,
+    "code": "ta->darkness_configured = 50;\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 153,
+    "end_line": 153,
+    "code": "ta->darkness_supported  = 3;\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 153,
+    "end_line": 153,
+    "code": "ta->darkness_supported  = 3;\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function",
+    "start_line": 163,
+    "end_line": 185,
+    "name": "lprint_sii_get_max_width",
+    "parent": null,
+    "hierarchy": "lprint_sii_get_max_width",
+    "code": "atic unsigned\t\t\t\t// O - Maximum width in dots\nlprint_sii_get_max_width(\n    const char *driver_name)\t\t// I - Driver name\n{\n  switch (atoi(driver_name + 7))\n  {\n    case 100 :\n    case 410 :\n\treturn (192);\n\tbreak;\n\n    case 200 :\n    case 240 :\n    case 420 :\n    case 430 :\n        return (384);\n        break;\n\n    default :\n        return (576);\n        break;\n  }\n}\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function",
+    "start_line": 192,
+    "end_line": 223,
+    "name": "lprint_sii_init",
+    "parent": null,
+    "hierarchy": "lprint_sii_init",
+    "code": "atic void\nlprint_sii_init(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    lprint_sii_t       *siidata)\t// O - Driver data\n{\n  const char\t*driver_name = papplPrinterGetDriverName(papplJobGetPrinter(job));\n\t\t\t\t\t// Driver name\n\n\n  (void)options;\n\n  // Initialize driver data and save it...\n  siidata->max_width = lprint_sii_get_max_width(driver_name);\n  switch (atoi(driver_name + 7))\n  {\n    case 100 :\n    case 410 :\n\t// Reset printer...\n\tpapplDevicePrintf(device, \"%c\", LPRINT_SLP_CMD_RESET);\n\tpapplDeviceFlush(device);\n\tsleep(3);\n\tbreak;\n\n    default :\n        // Nothing else to do...\n        break;\n  }\n\n  papplJobSetData(job, siidata);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 192,
+    "end_line": 223,
+    "code": "atic void\nlprint_sii_init(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    lprint_sii_t       *siidata)\t// O - Driver data\n{\n  const char\t*driver_name = papplPrinterGetDriverName(papplJobGetPrinter(job));\n\t\t\t\t\t// Driver name\n\n\n  (void)options;\n\n  // Initialize driver data and save it...\n  siidata->max_width = lprint_sii_get_max_width(driver_name);\n  switch (atoi(driver_name + 7))\n  {\n    case 100 :\n    case 410 :\n\t// Reset printer...\n\tpapplDevicePrintf(device, \"%c\", LPRINT_SLP_CMD_RESET);\n\tpapplDeviceFlush(device);\n\tsleep(3);\n\tbreak;\n\n    default :\n        // Nothing else to do...\n        break;\n  }\n\n  papplJobSetData(job, siidata);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 192,
+    "end_line": 223,
+    "code": "atic void\nlprint_sii_init(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    lprint_sii_t       *siidata)\t// O - Driver data\n{\n  const char\t*driver_name = papplPrinterGetDriverName(papplJobGetPrinter(job));\n\t\t\t\t\t// Driver name\n\n\n  (void)options;\n\n  // Initialize driver data and save it...\n  siidata->max_width = lprint_sii_get_max_width(driver_name);\n  switch (atoi(driver_name + 7))\n  {\n    case 100 :\n    case 410 :\n\t// Reset printer...\n\tpapplDevicePrintf(device, \"%c\", LPRINT_SLP_CMD_RESET);\n\tpapplDeviceFlush(device);\n\tsleep(3);\n\tbreak;\n\n    default :\n        // Nothing else to do...\n        break;\n  }\n\n  papplJobSetData(job, siidata);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 198,
+    "end_line": 223,
+    "code": "  const char\t*driver_name = papplPrinterGetDriverName(papplJobGetPrinter(job));\n\t\t\t\t\t// Driver name\n\n\n  (void)options;\n\n  // Initialize driver data and save it...\n  siidata->max_width = lprint_sii_get_max_width(driver_name);\n  switch (atoi(driver_name + 7))\n  {\n    case 100 :\n    case 410 :\n\t// Reset printer...\n\tpapplDevicePrintf(device, \"%c\", LPRINT_SLP_CMD_RESET);\n\tpapplDeviceFlush(device);\n\tsleep(3);\n\tbreak;\n\n    default :\n        // Nothing else to do...\n        break;\n  }\n\n  papplJobSetData(job, siidata);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 198,
+    "end_line": 223,
+    "code": "  const char\t*driver_name = papplPrinterGetDriverName(papplJobGetPrinter(job));\n\t\t\t\t\t// Driver name\n\n\n  (void)options;\n\n  // Initialize driver data and save it...\n  siidata->max_width = lprint_sii_get_max_width(driver_name);\n  switch (atoi(driver_name + 7))\n  {\n    case 100 :\n    case 410 :\n\t// Reset printer...\n\tpapplDevicePrintf(device, \"%c\", LPRINT_SLP_CMD_RESET);\n\tpapplDeviceFlush(device);\n\tsleep(3);\n\tbreak;\n\n    default :\n        // Nothing else to do...\n        break;\n  }\n\n  papplJobSetData(job, siidata);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "global_variable",
+    "start_line": 199,
+    "end_line": 199,
+    "code": "nst char\t*driver_name = papplPrinterGetDriverName(papplJobGetPrinter(job));\n\t",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 206,
+    "end_line": 206,
+    "code": "idata->max_width = lprint_sii_get_max_width(driver_name);\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 206,
+    "end_line": 206,
+    "code": "idata->max_width = lprint_sii_get_max_width(driver_name);\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 206,
+    "end_line": 206,
+    "code": "idata->max_width = lprint_sii_get_max_width(driver_name);\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 206,
+    "end_line": 206,
+    "code": "idata->max_width = lprint_sii_get_max_width(driver_name);\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "anonymous_initializer_block",
+    "start_line": 207,
+    "end_line": 220,
+    "code": "itch (atoi(driver_name + 7))\n  {\n    case 100 :\n    case 410 :\n\t// Reset printer...\n\tpapplDevicePrintf(device, \"%c\", LPRINT_SLP_CMD_RESET);\n\tpapplDeviceFlush(device);\n\tsleep(3);\n\tbreak;\n\n    default :\n        // Nothing else to do...\n        break;\n  }\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function",
+    "start_line": 230,
+    "end_line": 268,
+    "name": "lprint_sii_printfile",
+    "parent": null,
+    "hierarchy": "lprint_sii_printfile",
+    "code": "atic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_printfile(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device)\t\t// I - Output device\n{\n  int\t\tfd;\t\t\t// Input file\n  ssize_t\tbytes;\t\t\t// Bytes read/written\n  char\t\tbuffer[65536];\t\t// Read/write buffer\n  lprint_sii_t\tsiidata;\t\t// Driver data\n\n\n  // Initialize driver data...\n  lprint_sii_init(job, options, device, &siidata);\n\n  // Copy the raw file...\n  papplJobSetImpressions(job, 1);\n\n  if ((fd = open(papplJobGetFilename(job), O_RDONLY)) < 0)\n  {\n    papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to open print file \\\"%s\\\": %s\", papplJobGetFilename(job), strerror(errno));\n    return (false);\n  }\n\n  while ((bytes = read(fd, buffer, sizeof(buffer))) > 0)\n  {\n    if (papplDeviceWrite(device, buffer, (size_t)bytes) < 0)\n    {\n      papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to send %d bytes to printer.\", (int)bytes);\n      close(fd);\n      return (false);\n    }\n  }\n  close(fd);\n\n  papplJobSetImpressionsCompleted(job, 1);\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 230,
+    "end_line": 268,
+    "code": "atic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_printfile(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device)\t\t// I - Output device\n{\n  int\t\tfd;\t\t\t// Input file\n  ssize_t\tbytes;\t\t\t// Bytes read/written\n  char\t\tbuffer[65536];\t\t// Read/write buffer\n  lprint_sii_t\tsiidata;\t\t// Driver data\n\n\n  // Initialize driver data...\n  lprint_sii_init(job, options, device, &siidata);\n\n  // Copy the raw file...\n  papplJobSetImpressions(job, 1);\n\n  if ((fd = open(papplJobGetFilename(job), O_RDONLY)) < 0)\n  {\n    papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to open print file \\\"%s\\\": %s\", papplJobGetFilename(job), strerror(errno));\n    return (false);\n  }\n\n  while ((bytes = read(fd, buffer, sizeof(buffer))) > 0)\n  {\n    if (papplDeviceWrite(device, buffer, (size_t)bytes) < 0)\n    {\n      papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to send %d bytes to printer.\", (int)bytes);\n      close(fd);\n      return (false);\n    }\n  }\n  close(fd);\n\n  papplJobSetImpressionsCompleted(job, 1);\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 235,
+    "end_line": 268,
+    "code": "  int\t\tfd;\t\t\t// Input file\n  ssize_t\tbytes;\t\t\t// Bytes read/written\n  char\t\tbuffer[65536];\t\t// Read/write buffer\n  lprint_sii_t\tsiidata;\t\t// Driver data\n\n\n  // Initialize driver data...\n  lprint_sii_init(job, options, device, &siidata);\n\n  // Copy the raw file...\n  papplJobSetImpressions(job, 1);\n\n  if ((fd = open(papplJobGetFilename(job), O_RDONLY)) < 0)\n  {\n    papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to open print file \\\"%s\\\": %s\", papplJobGetFilename(job), strerror(errno));\n    return (false);\n  }\n\n  while ((bytes = read(fd, buffer, sizeof(buffer))) > 0)\n  {\n    if (papplDeviceWrite(device, buffer, (size_t)bytes) < 0)\n    {\n      papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to send %d bytes to printer.\", (int)bytes);\n      close(fd);\n      return (false);\n    }\n  }\n  close(fd);\n\n  papplJobSetImpressionsCompleted(job, 1);\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 254,
+    "end_line": 262,
+    "code": "ile ((bytes = read(fd, buffer, sizeof(buffer))) > 0)\n  {\n    if (papplDeviceWrite(device, buffer, (size_t)bytes) < 0)\n    {\n      papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to send %d bytes to printer.\", (int)bytes);\n      close(fd);\n      return (false);\n    }\n  }\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "anonymous_initializer_block",
+    "start_line": 255,
+    "end_line": 262,
+    "code": "    if (papplDeviceWrite(device, buffer, (size_t)bytes) < 0)\n    {\n      papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to send %d bytes to printer.\", (int)bytes);\n      close(fd);\n      return (false);\n    }\n  }\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "anonymous_initializer_block",
+    "start_line": 256,
+    "end_line": 261,
+    "code": " (papplDeviceWrite(device, buffer, (size_t)bytes) < 0)\n    {\n      papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to send %d bytes to printer.\", (int)bytes);\n      close(fd);\n      return (false);\n    }\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function",
+    "start_line": 275,
+    "end_line": 290,
+    "name": "lprint_sii_rendjob",
+    "parent": null,
+    "hierarchy": "lprint_sii_rendjob",
+    "code": "atic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_rendjob(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device)\t\t// I - Output device\n{\n  lprint_sii_t\t\t*siidata = (lprint_sii_t *)papplJobGetData(job);\n\t\t\t\t\t// SII driver data\n\n  (void)options;\n\n  free(siidata);\n  papplJobSetData(job, NULL);\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "global_variable",
+    "start_line": 281,
+    "end_line": 281,
+    "code": "rint_sii_t\t\t*siidata = (lprint_sii_t *)papplJobGetData(job);\n\t",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function",
+    "start_line": 297,
+    "end_line": 321,
+    "name": "lprint_sii_rendpage",
+    "parent": null,
+    "hierarchy": "lprint_sii_rendpage",
+    "code": "atic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_rendpage(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    unsigned           page)\t\t// I - Page number\n{\n  lprint_sii_t\t*siidata = (lprint_sii_t *)papplJobGetData(job);\n\t\t\t\t\t// SII driver data\n\n\n  (void)page;\n\n  // Write last line\n  lprint_sii_rwriteline(job, options, device, options->header.cupsHeight, NULL);\n\n  // Eject\n  papplDevicePrintf(device, \"%c\", LPRINT_SLP_CMD_FORMFEED);\n  papplDeviceFlush(device);\n\n  // Free memory and return...\n  lprintDitherFree(&siidata->dither);\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 297,
+    "end_line": 321,
+    "code": "atic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_rendpage(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    unsigned           page)\t\t// I - Page number\n{\n  lprint_sii_t\t*siidata = (lprint_sii_t *)papplJobGetData(job);\n\t\t\t\t\t// SII driver data\n\n\n  (void)page;\n\n  // Write last line\n  lprint_sii_rwriteline(job, options, device, options->header.cupsHeight, NULL);\n\n  // Eject\n  papplDevicePrintf(device, \"%c\", LPRINT_SLP_CMD_FORMFEED);\n  papplDeviceFlush(device);\n\n  // Free memory and return...\n  lprintDitherFree(&siidata->dither);\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 297,
+    "end_line": 321,
+    "code": "atic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_rendpage(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    unsigned           page)\t\t// I - Page number\n{\n  lprint_sii_t\t*siidata = (lprint_sii_t *)papplJobGetData(job);\n\t\t\t\t\t// SII driver data\n\n\n  (void)page;\n\n  // Write last line\n  lprint_sii_rwriteline(job, options, device, options->header.cupsHeight, NULL);\n\n  // Eject\n  papplDevicePrintf(device, \"%c\", LPRINT_SLP_CMD_FORMFEED);\n  papplDeviceFlush(device);\n\n  // Free memory and return...\n  lprintDitherFree(&siidata->dither);\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 303,
+    "end_line": 321,
+    "code": "  lprint_sii_t\t*siidata = (lprint_sii_t *)papplJobGetData(job);\n\t\t\t\t\t// SII driver data\n\n\n  (void)page;\n\n  // Write last line\n  lprint_sii_rwriteline(job, options, device, options->header.cupsHeight, NULL);\n\n  // Eject\n  papplDevicePrintf(device, \"%c\", LPRINT_SLP_CMD_FORMFEED);\n  papplDeviceFlush(device);\n\n  // Free memory and return...\n  lprintDitherFree(&siidata->dither);\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 303,
+    "end_line": 321,
+    "code": "  lprint_sii_t\t*siidata = (lprint_sii_t *)papplJobGetData(job);\n\t\t\t\t\t// SII driver data\n\n\n  (void)page;\n\n  // Write last line\n  lprint_sii_rwriteline(job, options, device, options->header.cupsHeight, NULL);\n\n  // Eject\n  papplDevicePrintf(device, \"%c\", LPRINT_SLP_CMD_FORMFEED);\n  papplDeviceFlush(device);\n\n  // Free memory and return...\n  lprintDitherFree(&siidata->dither);\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "global_variable",
+    "start_line": 304,
+    "end_line": 304,
+    "code": "rint_sii_t\t*siidata = (lprint_sii_t *)papplJobGetData(job);\n\t",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function",
+    "start_line": 328,
+    "end_line": 344,
+    "name": "lprint_sii_rstartjob",
+    "parent": null,
+    "hierarchy": "lprint_sii_rstartjob",
+    "code": "atic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_rstartjob(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device)\t\t// I - Output device\n{\n  lprint_sii_t\t\t*siidata = (lprint_sii_t *)calloc(1, sizeof(lprint_sii_t));\n\t\t\t\t\t// SII driver data\n\n\n  (void)options;\n\n  // Initialize driver data...\n  lprint_sii_init(job, options, device, siidata);\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 328,
+    "end_line": 344,
+    "code": "atic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_rstartjob(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device)\t\t// I - Output device\n{\n  lprint_sii_t\t\t*siidata = (lprint_sii_t *)calloc(1, sizeof(lprint_sii_t));\n\t\t\t\t\t// SII driver data\n\n\n  (void)options;\n\n  // Initialize driver data...\n  lprint_sii_init(job, options, device, siidata);\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 333,
+    "end_line": 344,
+    "code": "  lprint_sii_t\t\t*siidata = (lprint_sii_t *)calloc(1, sizeof(lprint_sii_t));\n\t\t\t\t\t// SII driver data\n\n\n  (void)options;\n\n  // Initialize driver data...\n  lprint_sii_init(job, options, device, siidata);\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "global_variable",
+    "start_line": 334,
+    "end_line": 334,
+    "code": "rint_sii_t\t\t*siidata = (lprint_sii_t *)calloc(1, sizeof(lprint_sii_t));\n\t",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function",
+    "start_line": 351,
+    "end_line": 402,
+    "name": "lprint_sii_rstartpage",
+    "parent": null,
+    "hierarchy": "lprint_sii_rstartpage",
+    "code": "atic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_rstartpage(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    unsigned           page)\t\t// I - Page number\n{\n  lprint_sii_t *siidata = (lprint_sii_t *)papplJobGetData(job);\n\t\t\t\t\t// SII driver data\n  const char\t*driver_name = papplPrinterGetDriverName(papplJobGetPrinter(job));\n\t\t\t\t\t// Driver name\n  int\t\tdarkness;\t\t// Combined density\n\n\n\n  (void)page;\n\n  // Initialize the dither buffer and blanks count...\n  if (!lprintDitherAlloc(&siidata->dither, job, options, CUPS_CSPACE_K, options->header.HWResolution[0] == 300 ? 1.2 : 1.0))\n    return (false);\n\n  papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_MARGIN, (int)(12.7 * (lprint_sii_get_max_width(driver_name) - options->header.cupsWidth) / options->header.HWResolution[0]));\n\n  siidata->blanks = 0;\n\n  // Set darkness...\n  if ((darkness = options->darkness_configured + options->print_darkness) < 0)\n    darkness = 0;\n  else if (darkness > 100)\n    darkness = 100;\n\n  papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_DENSITY, 3 * darkness / 100);\n\n  // Set quality...\n  switch (atoi(driver_name + 7))\n  {\n    case 100 :\n    case 200 :\n    case 240 :\n    case 410 :\n    case 420 :\n    case 430 :\n        papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_FINEMODE, options->print_quality == IPP_QUALITY_HIGH ? 0x01 : 0x00);\n        break;\n\n    default :\n        papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_SETSPEED, options->print_quality == IPP_QUALITY_HIGH ? 0x02 : 0x00);\n        break;\n  }\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 351,
+    "end_line": 402,
+    "code": "atic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_rstartpage(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    unsigned           page)\t\t// I - Page number\n{\n  lprint_sii_t *siidata = (lprint_sii_t *)papplJobGetData(job);\n\t\t\t\t\t// SII driver data\n  const char\t*driver_name = papplPrinterGetDriverName(papplJobGetPrinter(job));\n\t\t\t\t\t// Driver name\n  int\t\tdarkness;\t\t// Combined density\n\n\n\n  (void)page;\n\n  // Initialize the dither buffer and blanks count...\n  if (!lprintDitherAlloc(&siidata->dither, job, options, CUPS_CSPACE_K, options->header.HWResolution[0] == 300 ? 1.2 : 1.0))\n    return (false);\n\n  papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_MARGIN, (int)(12.7 * (lprint_sii_get_max_width(driver_name) - options->header.cupsWidth) / options->header.HWResolution[0]));\n\n  siidata->blanks = 0;\n\n  // Set darkness...\n  if ((darkness = options->darkness_configured + options->print_darkness) < 0)\n    darkness = 0;\n  else if (darkness > 100)\n    darkness = 100;\n\n  papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_DENSITY, 3 * darkness / 100);\n\n  // Set quality...\n  switch (atoi(driver_name + 7))\n  {\n    case 100 :\n    case 200 :\n    case 240 :\n    case 410 :\n    case 420 :\n    case 430 :\n        papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_FINEMODE, options->print_quality == IPP_QUALITY_HIGH ? 0x01 : 0x00);\n        break;\n\n    default :\n        papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_SETSPEED, options->print_quality == IPP_QUALITY_HIGH ? 0x02 : 0x00);\n        break;\n  }\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 351,
+    "end_line": 402,
+    "code": "atic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_rstartpage(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    unsigned           page)\t\t// I - Page number\n{\n  lprint_sii_t *siidata = (lprint_sii_t *)papplJobGetData(job);\n\t\t\t\t\t// SII driver data\n  const char\t*driver_name = papplPrinterGetDriverName(papplJobGetPrinter(job));\n\t\t\t\t\t// Driver name\n  int\t\tdarkness;\t\t// Combined density\n\n\n\n  (void)page;\n\n  // Initialize the dither buffer and blanks count...\n  if (!lprintDitherAlloc(&siidata->dither, job, options, CUPS_CSPACE_K, options->header.HWResolution[0] == 300 ? 1.2 : 1.0))\n    return (false);\n\n  papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_MARGIN, (int)(12.7 * (lprint_sii_get_max_width(driver_name) - options->header.cupsWidth) / options->header.HWResolution[0]));\n\n  siidata->blanks = 0;\n\n  // Set darkness...\n  if ((darkness = options->darkness_configured + options->print_darkness) < 0)\n    darkness = 0;\n  else if (darkness > 100)\n    darkness = 100;\n\n  papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_DENSITY, 3 * darkness / 100);\n\n  // Set quality...\n  switch (atoi(driver_name + 7))\n  {\n    case 100 :\n    case 200 :\n    case 240 :\n    case 410 :\n    case 420 :\n    case 430 :\n        papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_FINEMODE, options->print_quality == IPP_QUALITY_HIGH ? 0x01 : 0x00);\n        break;\n\n    default :\n        papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_SETSPEED, options->print_quality == IPP_QUALITY_HIGH ? 0x02 : 0x00);\n        break;\n  }\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 357,
+    "end_line": 402,
+    "code": "  lprint_sii_t *siidata = (lprint_sii_t *)papplJobGetData(job);\n\t\t\t\t\t// SII driver data\n  const char\t*driver_name = papplPrinterGetDriverName(papplJobGetPrinter(job));\n\t\t\t\t\t// Driver name\n  int\t\tdarkness;\t\t// Combined density\n\n\n\n  (void)page;\n\n  // Initialize the dither buffer and blanks count...\n  if (!lprintDitherAlloc(&siidata->dither, job, options, CUPS_CSPACE_K, options->header.HWResolution[0] == 300 ? 1.2 : 1.0))\n    return (false);\n\n  papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_MARGIN, (int)(12.7 * (lprint_sii_get_max_width(driver_name) - options->header.cupsWidth) / options->header.HWResolution[0]));\n\n  siidata->blanks = 0;\n\n  // Set darkness...\n  if ((darkness = options->darkness_configured + options->print_darkness) < 0)\n    darkness = 0;\n  else if (darkness > 100)\n    darkness = 100;\n\n  papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_DENSITY, 3 * darkness / 100);\n\n  // Set quality...\n  switch (atoi(driver_name + 7))\n  {\n    case 100 :\n    case 200 :\n    case 240 :\n    case 410 :\n    case 420 :\n    case 430 :\n        papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_FINEMODE, options->print_quality == IPP_QUALITY_HIGH ? 0x01 : 0x00);\n        break;\n\n    default :\n        papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_SETSPEED, options->print_quality == IPP_QUALITY_HIGH ? 0x02 : 0x00);\n        break;\n  }\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 357,
+    "end_line": 402,
+    "code": "  lprint_sii_t *siidata = (lprint_sii_t *)papplJobGetData(job);\n\t\t\t\t\t// SII driver data\n  const char\t*driver_name = papplPrinterGetDriverName(papplJobGetPrinter(job));\n\t\t\t\t\t// Driver name\n  int\t\tdarkness;\t\t// Combined density\n\n\n\n  (void)page;\n\n  // Initialize the dither buffer and blanks count...\n  if (!lprintDitherAlloc(&siidata->dither, job, options, CUPS_CSPACE_K, options->header.HWResolution[0] == 300 ? 1.2 : 1.0))\n    return (false);\n\n  papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_MARGIN, (int)(12.7 * (lprint_sii_get_max_width(driver_name) - options->header.cupsWidth) / options->header.HWResolution[0]));\n\n  siidata->blanks = 0;\n\n  // Set darkness...\n  if ((darkness = options->darkness_configured + options->print_darkness) < 0)\n    darkness = 0;\n  else if (darkness > 100)\n    darkness = 100;\n\n  papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_DENSITY, 3 * darkness / 100);\n\n  // Set quality...\n  switch (atoi(driver_name + 7))\n  {\n    case 100 :\n    case 200 :\n    case 240 :\n    case 410 :\n    case 420 :\n    case 430 :\n        papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_FINEMODE, options->print_quality == IPP_QUALITY_HIGH ? 0x01 : 0x00);\n        break;\n\n    default :\n        papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_SETSPEED, options->print_quality == IPP_QUALITY_HIGH ? 0x02 : 0x00);\n        break;\n  }\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "global_variable",
+    "start_line": 358,
+    "end_line": 358,
+    "code": "rint_sii_t *siidata = (lprint_sii_t *)papplJobGetData(job);\n\t",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "global_variable",
+    "start_line": 360,
+    "end_line": 360,
+    "code": "nst char\t*driver_name = papplPrinterGetDriverName(papplJobGetPrinter(job));\n\t",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 369,
+    "end_line": 370,
+    "code": " (!lprintDitherAlloc(&siidata->dither, job, options, CUPS_CSPACE_K, options->header.HWResolution[0] == 300 ? 1.2 : 1.0))\n    return (false);\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 369,
+    "end_line": 370,
+    "code": " (!lprintDitherAlloc(&siidata->dither, job, options, CUPS_CSPACE_K, options->header.HWResolution[0] == 300 ? 1.2 : 1.0))\n    return (false);\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 369,
+    "end_line": 369,
+    "code": "lprintDitherAlloc(&siidata->dither, job, options, CUPS_CSPACE_K, options->header.HWResolution[0] == 300 ? 1.2 : 1.0))\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 369,
+    "end_line": 369,
+    "code": "printDitherAlloc(&siidata->dither, job, options, CUPS_CSPACE_K, options->header.HWResolution[0] == 300 ? 1.2 : 1.0))\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 369,
+    "end_line": 369,
+    "code": "rintDitherAlloc(&siidata->dither, job, options, CUPS_CSPACE_K, options->header.HWResolution[0] == 300 ? 1.2 : 1.0))\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 374,
+    "end_line": 374,
+    "code": "idata->blanks = 0;\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 374,
+    "end_line": 374,
+    "code": "idata->blanks = 0;\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 377,
+    "end_line": 380,
+    "code": " ((darkness = options->darkness_configured + options->print_darkness) < 0)\n    darkness = 0;\n  else if (darkness > 100)\n    darkness = 100;\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 377,
+    "end_line": 380,
+    "code": " ((darkness = options->darkness_configured + options->print_darkness) < 0)\n    darkness = 0;\n  else if (darkness > 100)\n    darkness = 100;\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 385,
+    "end_line": 399,
+    "code": "itch (atoi(driver_name + 7))\n  {\n    case 100 :\n    case 200 :\n    case 240 :\n    case 410 :\n    case 420 :\n    case 430 :\n        papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_FINEMODE, options->print_quality == IPP_QUALITY_HIGH ? 0x01 : 0x00);\n        break;\n\n    default :\n        papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_SETSPEED, options->print_quality == IPP_QUALITY_HIGH ? 0x02 : 0x00);\n        break;\n  }\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 385,
+    "end_line": 399,
+    "code": "itch (atoi(driver_name + 7))\n  {\n    case 100 :\n    case 200 :\n    case 240 :\n    case 410 :\n    case 420 :\n    case 430 :\n        papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_FINEMODE, options->print_quality == IPP_QUALITY_HIGH ? 0x01 : 0x00);\n        break;\n\n    default :\n        papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_SETSPEED, options->print_quality == IPP_QUALITY_HIGH ? 0x02 : 0x00);\n        break;\n  }\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 386,
+    "end_line": 399,
+    "code": "    case 100 :\n    case 200 :\n    case 240 :\n    case 410 :\n    case 420 :\n    case 430 :\n        papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_FINEMODE, options->print_quality == IPP_QUALITY_HIGH ? 0x01 : 0x00);\n        break;\n\n    default :\n        papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_SETSPEED, options->print_quality == IPP_QUALITY_HIGH ? 0x02 : 0x00);\n        break;\n  }\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 386,
+    "end_line": 399,
+    "code": "    case 100 :\n    case 200 :\n    case 240 :\n    case 410 :\n    case 420 :\n    case 430 :\n        papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_FINEMODE, options->print_quality == IPP_QUALITY_HIGH ? 0x01 : 0x00);\n        break;\n\n    default :\n        papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_SETSPEED, options->print_quality == IPP_QUALITY_HIGH ? 0x02 : 0x00);\n        break;\n  }\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 392,
+    "end_line": 394,
+    "code": "se 430 :\n        papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_FINEMODE, options->print_quality == IPP_QUALITY_HIGH ? 0x01 : 0x00);\n        break;\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 392,
+    "end_line": 394,
+    "code": "se 430 :\n        papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_FINEMODE, options->print_quality == IPP_QUALITY_HIGH ? 0x01 : 0x00);\n        break;\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 393,
+    "end_line": 393,
+    "code": "pplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_FINEMODE, options->print_quality == IPP_QUALITY_HIGH ? 0x01 : 0x00);\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 393,
+    "end_line": 393,
+    "code": "pplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_FINEMODE, options->print_quality == IPP_QUALITY_HIGH ? 0x01 : 0x00);\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 393,
+    "end_line": 393,
+    "code": "pplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_FINEMODE, options->print_quality == IPP_QUALITY_HIGH ? 0x01 : 0x00);\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 393,
+    "end_line": 393,
+    "code": "pplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_FINEMODE, options->print_quality == IPP_QUALITY_HIGH ? 0x01 : 0x00);\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 393,
+    "end_line": 393,
+    "code": "evice, \"%c%c\", LPRINT_SLP_CMD_FINEMODE, options->print_quality == IPP_QUALITY_HIGH ? 0x01 : 0x00);\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 393,
+    "end_line": 393,
+    "code": "tions->print_quality == IPP_QUALITY_HIGH ? 0x01 : 0x00);",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 396,
+    "end_line": 398,
+    "code": "fault :\n        papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_SETSPEED, options->print_quality == IPP_QUALITY_HIGH ? 0x02 : 0x00);\n        break;\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 396,
+    "end_line": 398,
+    "code": "fault :\n        papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_SETSPEED, options->print_quality == IPP_QUALITY_HIGH ? 0x02 : 0x00);\n        break;\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 397,
+    "end_line": 397,
+    "code": "pplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_SETSPEED, options->print_quality == IPP_QUALITY_HIGH ? 0x02 : 0x00);\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 397,
+    "end_line": 397,
+    "code": "pplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_SETSPEED, options->print_quality == IPP_QUALITY_HIGH ? 0x02 : 0x00);\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 397,
+    "end_line": 397,
+    "code": "pplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_SETSPEED, options->print_quality == IPP_QUALITY_HIGH ? 0x02 : 0x00);\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 397,
+    "end_line": 397,
+    "code": "pplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_SETSPEED, options->print_quality == IPP_QUALITY_HIGH ? 0x02 : 0x00);\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 397,
+    "end_line": 397,
+    "code": "evice, \"%c%c\", LPRINT_SLP_CMD_SETSPEED, options->print_quality == IPP_QUALITY_HIGH ? 0x02 : 0x00);\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 397,
+    "end_line": 397,
+    "code": "tions->print_quality == IPP_QUALITY_HIGH ? 0x02 : 0x00);",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function",
+    "start_line": 409,
+    "end_line": 457,
+    "name": "lprint_sii_rwriteline",
+    "parent": null,
+    "hierarchy": "lprint_sii_rwriteline",
+    "code": "atic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_rwriteline(\n    pappl_job_t         *job,\t\t// I - Job\n    pappl_pr_options_t  *options,\t// I - Job options\n    pappl_device_t      *device,\t// I - Output device\n    unsigned            y,\t\t// I - Line number\n    const unsigned char *line)\t\t// I - Line\n{\n  lprint_sii_t\t\t*siidata = (lprint_sii_t *)papplJobGetData(job);\n\t\t\t\t\t// SII driver data\n\n\n  // Dither...\n  if (!lprintDitherLine(&siidata->dither, y, line))\n    return (true);\n\n  if (!siidata->dither.output[0] && !memcmp(siidata->dither.output, siidata->dither.output + 1, siidata->dither.out_width - 1))\n  {\n    // Skip blank lines...\n    siidata->blanks ++;\n    return (true);\n  }\n\n  // Feed past any blank lines...\n  while (siidata->blanks > 0)\n  {\n    if (siidata->blanks == 1)\n    {\n      papplDevicePuts(device, \"\\n\");\n      siidata->blanks = 0;\n    }\n    else if (siidata->blanks < 255)\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)siidata->blanks);\n      siidata->blanks = 0;\n    }\n    else\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)255);\n      siidata->blanks -= 255;\n    }\n  }\n\n  // Output bitmap data...\n  papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_PRINT, (char)siidata->dither.out_width);\n  papplDeviceWrite(device, siidata->dither.output, siidata->dither.out_width);\n\n  return (true);\n}\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 409,
+    "end_line": 457,
+    "code": "atic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_rwriteline(\n    pappl_job_t         *job,\t\t// I - Job\n    pappl_pr_options_t  *options,\t// I - Job options\n    pappl_device_t      *device,\t// I - Output device\n    unsigned            y,\t\t// I - Line number\n    const unsigned char *line)\t\t// I - Line\n{\n  lprint_sii_t\t\t*siidata = (lprint_sii_t *)papplJobGetData(job);\n\t\t\t\t\t// SII driver data\n\n\n  // Dither...\n  if (!lprintDitherLine(&siidata->dither, y, line))\n    return (true);\n\n  if (!siidata->dither.output[0] && !memcmp(siidata->dither.output, siidata->dither.output + 1, siidata->dither.out_width - 1))\n  {\n    // Skip blank lines...\n    siidata->blanks ++;\n    return (true);\n  }\n\n  // Feed past any blank lines...\n  while (siidata->blanks > 0)\n  {\n    if (siidata->blanks == 1)\n    {\n      papplDevicePuts(device, \"\\n\");\n      siidata->blanks = 0;\n    }\n    else if (siidata->blanks < 255)\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)siidata->blanks);\n      siidata->blanks = 0;\n    }\n    else\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)255);\n      siidata->blanks -= 255;\n    }\n  }\n\n  // Output bitmap data...\n  papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_PRINT, (char)siidata->dither.out_width);\n  papplDeviceWrite(device, siidata->dither.output, siidata->dither.out_width);\n\n  return (true);\n}\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 409,
+    "end_line": 457,
+    "code": "atic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_sii_rwriteline(\n    pappl_job_t         *job,\t\t// I - Job\n    pappl_pr_options_t  *options,\t// I - Job options\n    pappl_device_t      *device,\t// I - Output device\n    unsigned            y,\t\t// I - Line number\n    const unsigned char *line)\t\t// I - Line\n{\n  lprint_sii_t\t\t*siidata = (lprint_sii_t *)papplJobGetData(job);\n\t\t\t\t\t// SII driver data\n\n\n  // Dither...\n  if (!lprintDitherLine(&siidata->dither, y, line))\n    return (true);\n\n  if (!siidata->dither.output[0] && !memcmp(siidata->dither.output, siidata->dither.output + 1, siidata->dither.out_width - 1))\n  {\n    // Skip blank lines...\n    siidata->blanks ++;\n    return (true);\n  }\n\n  // Feed past any blank lines...\n  while (siidata->blanks > 0)\n  {\n    if (siidata->blanks == 1)\n    {\n      papplDevicePuts(device, \"\\n\");\n      siidata->blanks = 0;\n    }\n    else if (siidata->blanks < 255)\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)siidata->blanks);\n      siidata->blanks = 0;\n    }\n    else\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)255);\n      siidata->blanks -= 255;\n    }\n  }\n\n  // Output bitmap data...\n  papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_PRINT, (char)siidata->dither.out_width);\n  papplDeviceWrite(device, siidata->dither.output, siidata->dither.out_width);\n\n  return (true);\n}\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 416,
+    "end_line": 457,
+    "code": "  lprint_sii_t\t\t*siidata = (lprint_sii_t *)papplJobGetData(job);\n\t\t\t\t\t// SII driver data\n\n\n  // Dither...\n  if (!lprintDitherLine(&siidata->dither, y, line))\n    return (true);\n\n  if (!siidata->dither.output[0] && !memcmp(siidata->dither.output, siidata->dither.output + 1, siidata->dither.out_width - 1))\n  {\n    // Skip blank lines...\n    siidata->blanks ++;\n    return (true);\n  }\n\n  // Feed past any blank lines...\n  while (siidata->blanks > 0)\n  {\n    if (siidata->blanks == 1)\n    {\n      papplDevicePuts(device, \"\\n\");\n      siidata->blanks = 0;\n    }\n    else if (siidata->blanks < 255)\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)siidata->blanks);\n      siidata->blanks = 0;\n    }\n    else\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)255);\n      siidata->blanks -= 255;\n    }\n  }\n\n  // Output bitmap data...\n  papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_PRINT, (char)siidata->dither.out_width);\n  papplDeviceWrite(device, siidata->dither.output, siidata->dither.out_width);\n\n  return (true);\n}\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 416,
+    "end_line": 457,
+    "code": "  lprint_sii_t\t\t*siidata = (lprint_sii_t *)papplJobGetData(job);\n\t\t\t\t\t// SII driver data\n\n\n  // Dither...\n  if (!lprintDitherLine(&siidata->dither, y, line))\n    return (true);\n\n  if (!siidata->dither.output[0] && !memcmp(siidata->dither.output, siidata->dither.output + 1, siidata->dither.out_width - 1))\n  {\n    // Skip blank lines...\n    siidata->blanks ++;\n    return (true);\n  }\n\n  // Feed past any blank lines...\n  while (siidata->blanks > 0)\n  {\n    if (siidata->blanks == 1)\n    {\n      papplDevicePuts(device, \"\\n\");\n      siidata->blanks = 0;\n    }\n    else if (siidata->blanks < 255)\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)siidata->blanks);\n      siidata->blanks = 0;\n    }\n    else\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)255);\n      siidata->blanks -= 255;\n    }\n  }\n\n  // Output bitmap data...\n  papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_PRINT, (char)siidata->dither.out_width);\n  papplDeviceWrite(device, siidata->dither.output, siidata->dither.out_width);\n\n  return (true);\n}\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "global_variable",
+    "start_line": 417,
+    "end_line": 417,
+    "code": "rint_sii_t\t\t*siidata = (lprint_sii_t *)papplJobGetData(job);\n\t",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 433,
+    "end_line": 450,
+    "code": "ile (siidata->blanks > 0)\n  {\n    if (siidata->blanks == 1)\n    {\n      papplDevicePuts(device, \"\\n\");\n      siidata->blanks = 0;\n    }\n    else if (siidata->blanks < 255)\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)siidata->blanks);\n      siidata->blanks = 0;\n    }\n    else\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)255);\n      siidata->blanks -= 255;\n    }\n  }\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 433,
+    "end_line": 450,
+    "code": "ile (siidata->blanks > 0)\n  {\n    if (siidata->blanks == 1)\n    {\n      papplDevicePuts(device, \"\\n\");\n      siidata->blanks = 0;\n    }\n    else if (siidata->blanks < 255)\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)siidata->blanks);\n      siidata->blanks = 0;\n    }\n    else\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)255);\n      siidata->blanks -= 255;\n    }\n  }\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 434,
+    "end_line": 450,
+    "code": "    if (siidata->blanks == 1)\n    {\n      papplDevicePuts(device, \"\\n\");\n      siidata->blanks = 0;\n    }\n    else if (siidata->blanks < 255)\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)siidata->blanks);\n      siidata->blanks = 0;\n    }\n    else\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)255);\n      siidata->blanks -= 255;\n    }\n  }\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 434,
+    "end_line": 450,
+    "code": "    if (siidata->blanks == 1)\n    {\n      papplDevicePuts(device, \"\\n\");\n      siidata->blanks = 0;\n    }\n    else if (siidata->blanks < 255)\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)siidata->blanks);\n      siidata->blanks = 0;\n    }\n    else\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)255);\n      siidata->blanks -= 255;\n    }\n  }\n\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 435,
+    "end_line": 449,
+    "code": " (siidata->blanks == 1)\n    {\n      papplDevicePuts(device, \"\\n\");\n      siidata->blanks = 0;\n    }\n    else if (siidata->blanks < 255)\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)siidata->blanks);\n      siidata->blanks = 0;\n    }\n    else\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)255);\n      siidata->blanks -= 255;\n    }\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 435,
+    "end_line": 449,
+    "code": " (siidata->blanks == 1)\n    {\n      papplDevicePuts(device, \"\\n\");\n      siidata->blanks = 0;\n    }\n    else if (siidata->blanks < 255)\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)siidata->blanks);\n      siidata->blanks = 0;\n    }\n    else\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)255);\n      siidata->blanks -= 255;\n    }\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 436,
+    "end_line": 439,
+    "code": "      papplDevicePuts(device, \"\\n\");\n      siidata->blanks = 0;\n    }\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 436,
+    "end_line": 439,
+    "code": "      papplDevicePuts(device, \"\\n\");\n      siidata->blanks = 0;\n    }\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 438,
+    "end_line": 438,
+    "code": "idata->blanks = 0;\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 438,
+    "end_line": 438,
+    "code": "idata->blanks = 0;\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 440,
+    "end_line": 449,
+    "code": "se if (siidata->blanks < 255)\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)siidata->blanks);\n      siidata->blanks = 0;\n    }\n    else\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)255);\n      siidata->blanks -= 255;\n    }\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 440,
+    "end_line": 449,
+    "code": "se if (siidata->blanks < 255)\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)siidata->blanks);\n      siidata->blanks = 0;\n    }\n    else\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)255);\n      siidata->blanks -= 255;\n    }\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 440,
+    "end_line": 449,
+    "code": " (siidata->blanks < 255)\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)siidata->blanks);\n      siidata->blanks = 0;\n    }\n    else\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)255);\n      siidata->blanks -= 255;\n    }\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 440,
+    "end_line": 449,
+    "code": " (siidata->blanks < 255)\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)siidata->blanks);\n      siidata->blanks = 0;\n    }\n    else\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)255);\n      siidata->blanks -= 255;\n    }\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 441,
+    "end_line": 444,
+    "code": "      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)siidata->blanks);\n      siidata->blanks = 0;\n    }\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 441,
+    "end_line": 444,
+    "code": "      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)siidata->blanks);\n      siidata->blanks = 0;\n    }\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 443,
+    "end_line": 443,
+    "code": "idata->blanks = 0;\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 443,
+    "end_line": 443,
+    "code": "idata->blanks = 0;\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 445,
+    "end_line": 449,
+    "code": "se\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)255);\n      siidata->blanks -= 255;\n    }\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 445,
+    "end_line": 449,
+    "code": "se\n    {\n      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)255);\n      siidata->blanks -= 255;\n    }\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 446,
+    "end_line": 449,
+    "code": "      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)255);\n      siidata->blanks -= 255;\n    }\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 446,
+    "end_line": 449,
+    "code": "      papplDevicePrintf(device, \"%c%c\", LPRINT_SLP_CMD_VERTTAB, (char)255);\n      siidata->blanks -= 255;\n    }\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 448,
+    "end_line": 448,
+    "code": "idata->blanks -= 255;\n ",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 448,
+    "end_line": 448,
+    "code": "idata->blanks -= 255;\n",
+    "file": "data/codebase/lprint/lprint-sii.c"
+  }
+]

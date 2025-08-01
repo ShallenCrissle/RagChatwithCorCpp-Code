@@ -1,0 +1,1013 @@
+[
+  {
+    "type": "struct_assignment",
+    "start_line": 1,
+    "end_line": 429,
+    "code": "//\n// EPL2 driver for LPrint, a Label Printer Application\n//\n// Copyright \u00a9\u00a02019-2025 by Michael R Sweet.\n//\n// Licensed under Apache License v2.0.  See the file \"LICENSE\" for more\n// information.\n//\n\n#include \"lprint.h\"\n\n\n//\n// Local globals...\n//\n\nstatic const char * const lprint_epl2_2inch_media[] =\n{\t\t\t\t\t// Supported 2 inch media sizes\n  \"oe_1.25x0.25-label_1.25x0.25in\",\n  \"oe_1.25x2.25-label_1.25x2.25in\",\n\n  \"oe_1.5x0.25-label_1.5x0.25in\",\n  \"oe_1.5x0.5-label_1.5x0.5in\",\n  \"oe_1.5x1-label_1.5x1in\",\n  \"oe_1.5x2-label_1.5x2in\",\n\n  \"oe_2x0.37-label_2x0.37in\",\n  \"oe_2x0.5-label_2x0.5in\",\n  \"oe_2x1-label_2x1in\",\n  \"oe_2x1.25-label_2x1.25in\",\n  \"oe_2x2-label_2x2in\",\n  \"oe_2x3-label_2x3in\",\n  \"oe_2x4-label_2x4in\",\n  \"oe_2x5.5-label_2x5.5in\",\n\n  \"roll_max_2x100in\",\n  \"roll_min_0.75x0.25in\"\n};\nstatic const char * const lprint_epl2_4inch_media[] =\n{\t\t\t\t\t// Supported 4 inch media sizes\n  \"oe_1.25x0.25-label_1.25x0.25in\",\n  \"oe_1.25x2.25-label_1.25x2.25in\",\n\n  \"oe_1.5x0.25-label_1.5x0.25in\",\n  \"oe_1.5x0.5-label_1.5x0.5in\",\n  \"oe_1.5x1-label_1.5x1in\",\n  \"oe_1.5x2-label_1.5x2in\",\n\n  \"oe_2x0.37-label_2x0.37in\",\n  \"oe_2x0.5-label_2x0.5in\",\n  \"oe_2x1-label_2x1in\",\n  \"oe_2x1.25-label_2x1.25in\",\n  \"oe_2x2-label_2x2in\",\n  \"oe_2x3-label_2x3in\",\n  \"oe_2x4-label_2x4in\",\n  \"oe_2x5.5-label_2x5.5in\",\n\n  \"oe_2.25x0.5-label_2.25x0.5in\",\n  \"oe_2.25x1.25-label_2.25x1.25in\",\n  \"oe_30859-paint-can-label_2.25x3.125in\",\n  \"oe_2.25x4-label_2.25x4in\",\n  \"oe_2.25x5.5-label_2.25x5.5in\",\n\n  \"oe_2.38x5.5-label_2.38x5.5in\",\n\n  \"oe_2.5x1-label_2.5x1in\",\n  \"oe_2.5x2-label_2.5x2in\",\n\n  \"oe_2.75x1.25-label_2.75x1.25in\",\n\n  \"oe_2.9x1-label_2.9x1in\",\n\n  \"oe_3x1-label_3x1in\",\n  \"oe_3x1.25-label_3x1.25in\",\n  \"oe_3x2-label_3x2in\",\n  \"oe_3x3-label_3x3in\",\n  \"oe_3x5-label_3x5in\",\n\n  \"oe_3.25x2-label_3.25x2in\",\n  \"oe_3.25x5-label_3.25x5in\",\n  \"oe_3.25x5.5-label_3.25x5.5in\",\n  \"oe_3.25x5.83-label_3.25x5.83in\",\n  \"oe_3.25x7.83-label_3.25x7.83in\",\n\n  \"oe_3.5x1-label_3.5x1in\",\n\n  \"oe_4x1-label_4x1in\",\n  \"oe_4x2-label_4x2in\",\n  \"oe_4x3-label_4x3in\",\n  \"oe_4x4-label_4x4in\",\n  \"oe_4x5-label_4x5in\",\n  \"oe_4x6-label_4x6in\",\n  \"oe_4x6.5-label_4x6.5in\",\n  \"oe_4x7.83-label_4x7.83in\",\n  \"oe_4x13-label_4x13in\",\n\n/*  \"oe_6x1-label_6x1in\",\n  \"oe_6x2-label_6x2in\",\n  \"oe_6x3-label_6x3in\",\n  \"oe_6x4-label_6x4in\",\n  \"oe_6x5-label_6x5in\",\n  \"oe_6x6-label_6x6in\",\n  \"oe_6x6.5-label_6x6.5in\",\n  \"oe_6x13-label_6x13in\",\n\n  \"oe_8x1-label_8x1in\",\n  \"oe_8x2-label_8x2in\",\n  \"oe_8x3-label_8x3in\",\n  \"oe_8x4-label_8x4in\",\n  \"oe_8x5-label_8x5in\",\n  \"oe_8x6-label_8x6in\",\n  \"oe_8x6.5-label_8x6.5in\",\n  \"oe_8x13-label_8x13in\",*/\n\n  \"roll_max_4x100in\",\n  \"roll_min_0.75x0.25in\"\n};\n\n\n//\n// Local functions...\n//\n\nstatic bool\tlprint_epl2_printfile(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device);\nstatic bool\tlprint_epl2_rendjob(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device);\nstatic bool\tlprint_epl2_rendpage(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device, unsigned page);\nstatic bool\tlprint_epl2_rstartjob(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device);\nstatic bool\tlprint_epl2_rstartpage(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device, unsigned page);\nstatic bool\tlprint_epl2_rwriteline(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device, unsigned y, const unsigned char *line);\nstatic bool\tlprint_epl2_status(pappl_printer_t *printer);\n\n\n//\n// 'lprintInitEPL2()' - Initialize the driver.\n//\n\nbool\t\t\t\t\t// O - `true` on success, `false` on error\nlprintEPL2(\n    pappl_system_t         *system,\t// I - System\n    const char             *driver_name,// I - Driver name\n    const char             *device_uri,\t// I - Device URI\n    const char             *device_id,\t// I - 1284 device ID\n    pappl_pr_driver_data_t *data,\t// I - Pointer to driver data\n    ipp_t                  **attrs,\t// O - Pointer to driver attributes\n    void                   *cbdata)\t// I - Callback data (not used)\n{\n  data->printfile_cb  = lprint_epl2_printfile;\n  data->rendjob_cb    = lprint_epl2_rendjob;\n  data->rendpage_cb   = lprint_epl2_rendpage;\n  data->rstartjob_cb  = lprint_epl2_rstartjob;\n  data->rstartpage_cb = lprint_epl2_rstartpage;\n  data->rwriteline_cb = lprint_epl2_rwriteline;\n  data->status_cb     = lprint_epl2_status;\n  data->format        = LPRINT_EPL2_MIMETYPE;\n\n  data->num_resolution = 1;\n\n  if (strstr(driver_name, \"-203dpi\"))\n  {\n    data->x_resolution[0] = 203;\n    data->y_resolution[0] = 203;\n  }\n  else\n  {\n    data->x_resolution[0] = 300;\n    data->y_resolution[0] = 300;\n  }\n\n  data->x_default = data->y_default = data->x_resolution[0];\n\n  if (strstr(driver_name, \"-cutter\"))\n    data->finishings |= PAPPL_FINISHINGS_TRIM;\n\n  if (!strncmp(driver_name, \"epl2_2inch-\", 16))\n  {\n    // 2 inch printer...\n    data->num_media = (int)(sizeof(lprint_epl2_2inch_media) / sizeof(lprint_epl2_2inch_media[0]));\n    memcpy(data->media, lprint_epl2_2inch_media, sizeof(lprint_epl2_2inch_media));\n\n    papplCopyString(data->media_ready[0].size_name, \"oe_2x3-label_2x3in\", sizeof(data->media_ready[0].size_name));\n    papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n  }\n  else\n  {\n    // 4 inch printer...\n    data->num_media = (int)(sizeof(lprint_epl2_4inch_media) / sizeof(lprint_epl2_4inch_media[0]));\n    memcpy(data->media, lprint_epl2_4inch_media, sizeof(lprint_epl2_4inch_media));\n\n    papplCopyString(data->media_ready[0].size_name, \"na_index-4x6_4x6in\", sizeof(data->media_ready[0].size_name));\n    papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n  }\n\n  data->bottom_top = data->left_right = 1;\n\n  data->num_source = 1;\n  data->source[0]  = \"main-roll\";\n\n  data->num_type = 3;\n  data->type[0]  = \"continuous\";\n  data->type[1]  = \"labels\";\n  data->type[2]  = \"labels-continuous\";\n\n  data->mode_configured = PAPPL_LABEL_MODE_TEAR_OFF;\n  data->mode_supported = PAPPL_LABEL_MODE_APPLICATOR | PAPPL_LABEL_MODE_CUTTER | PAPPL_LABEL_MODE_CUTTER_DELAYED | PAPPL_LABEL_MODE_KIOSK | PAPPL_LABEL_MODE_PEEL_OFF | PAPPL_LABEL_MODE_PEEL_OFF_PREPEEL | PAPPL_LABEL_MODE_REWIND | PAPPL_LABEL_MODE_RFID | PAPPL_LABEL_MODE_TEAR_OFF;\n\n  data->speed_default      = 0;\n  data->speed_supported[0] = 2540;\n  data->speed_supported[1] = 6 * 2540;\n\n  data->darkness_configured = 50;\n  data->darkness_supported  = 30;\n\n  return (true);\n}\n\n\n//\n// 'lprint_epl2_print()' - Print a file.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_printfile(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device)\t\t// I - Output device\n{\n  int\t\tfd;\t\t\t// Input file\n  ssize_t\tbytes;\t\t\t// Bytes read/written\n  char\t\tbuffer[65536];\t\t// Read/write buffer\n\n\n  // Copy the raw file...\n  papplJobSetImpressions(job, 1);\n\n  if ((fd  = open(papplJobGetFilename(job), O_RDONLY)) < 0)\n  {\n    papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to open print file '%s': %s\", papplJobGetFilename(job), strerror(errno));\n    return (false);\n  }\n\n  while ((bytes = read(fd, buffer, sizeof(buffer))) > 0)\n  {\n    if (papplDeviceWrite(device, buffer, (size_t)bytes) < 0)\n    {\n      papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to send %d bytes to printer.\", (int)bytes);\n      close(fd);\n      return (false);\n    }\n  }\n  close(fd);\n\n  papplJobSetImpressionsCompleted(job, 1);\n\n  return (true);\n}\n\n\n//\n// 'lprint_epl2_rendjob()' - End a job.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_rendjob(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device)\t\t// I - Output device\n{\n  lprint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t\t\t\t\t// Dither buffer\n\n\n  (void)options;\n  (void)device;\n\n  free(dither);\n  papplJobSetData(job, NULL);\n\n  return (true);\n}\n\n\n//\n// 'lprint_epl2_rendpage()' - End a page.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_rendpage(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    unsigned           page)\t\t// I - Page number\n{\n  lprint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t\t\t\t\t// Dither buffer\n\n\n  (void)page;\n\n  lprint_epl2_rwriteline(job, options, device, options->header.cupsHeight, NULL);\n\n  papplDevicePuts(device, \"P1\\n\");\n\n  if (options->finishings & PAPPL_FINISHINGS_TRIM)\n    papplDevicePuts(device, \"C\\n\");\n\n  // Free memory and return...\n  lprintDitherFree(dither);\n\n  return (true);\n}\n\n\n//\n// 'lprint_epl2_rstartjob()' - Start a job.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_rstartjob(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device)\t\t// I - Output device\n{\n  lprint_dither_t *dither = (lprint_dither_t *)calloc(1, sizeof(lprint_dither_t));\n\t\t\t\t\t// Dither buffer\n\n\n  (void)options;\n  (void)device;\n\n  // Save dither buffer for job...\n  papplJobSetData(job, dither);\n\n  return (true);\n}\n\n\n//\n// 'lprint_epl2_rstartpage()' - Start a page.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_rstartpage(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    unsigned           page)\t\t// I - Page number\n{\n  int\t\tips;\t\t\t// Inches per second\n  lprint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t\t\t\t\t// Dither buffer\n  int\t\tdarkness;\t\t// Composite darkness value\n  double\tout_gamma = 1.0;\t// Output gamma correction\n\n\n  (void)page;\n\n  // Initialize the dither buffer...\n  if (options->header.HWResolution[0] == 300)\n    out_gamma = 1.2;\n\n  if (!lprintDitherAlloc(dither, job, options, CUPS_CSPACE_W, out_gamma))\n    return (false);\n\n  // Start a new label...\n  papplDevicePuts(device, \"\\nN\\n\");\n\n  // print-darkness\n  if ((darkness = options->print_darkness + options->darkness_configured) < 0)\n    darkness = 0;\n  else if (darkness > 100)\n    darkness = 100;\n\n  papplDevicePrintf(device, \"D%d\\n\", 15 * darkness / 100);\n\n  // print-speed\n  if ((ips = options->print_speed / 2540) > 0)\n    papplDevicePrintf(device, \"S%d\\n\", ips);\n\n  // Set label width...\n  papplDevicePrintf(device, \"q%u\\n\", dither->out_width * 8);\n\n  return (true);\n}\n\n\n//\n// 'lprint_epl2_rwriteline()' - Write a raster line.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_rwriteline(\n    pappl_job_t         *job,\t\t// I - Job\n    pappl_pr_options_t  *options,\t// I - Job options\n    pappl_device_t      *device,\t// I - Output device\n    unsigned            y,\t\t// I - Line number\n    const unsigned char *line)\t\t// I - Line\n{\n  lprint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t\t\t\t\t// Dither buffer\n\n\n  if (!lprintDitherLine(dither, y, line))\n    return (true);\n\n  if (dither->output[0] || memcmp(dither->output, dither->output + 1, dither->out_width - 1))\n  {\n    // Not a blank line\n    papplDevicePrintf(device, \"GW0,%u,%u,1\\n\", y, dither->out_width);\n    papplDeviceWrite(device, dither->output, dither->out_width);\n    papplDevicePuts(device, \"\\n\");\n  }\n\n  return (true);\n}\n\n\n//\n// 'lprint_epl2_status()' - Get current printer status.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_status(\n    pappl_printer_t *printer)\t\t// I - Printer\n{\n  (void)printer;\n\n  return (true);\n}\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 1,
+    "end_line": 429,
+    "code": "//\n// EPL2 driver for LPrint, a Label Printer Application\n//\n// Copyright \u00a9\u00a02019-2025 by Michael R Sweet.\n//\n// Licensed under Apache License v2.0.  See the file \"LICENSE\" for more\n// information.\n//\n\n#include \"lprint.h\"\n\n\n//\n// Local globals...\n//\n\nstatic const char * const lprint_epl2_2inch_media[] =\n{\t\t\t\t\t// Supported 2 inch media sizes\n  \"oe_1.25x0.25-label_1.25x0.25in\",\n  \"oe_1.25x2.25-label_1.25x2.25in\",\n\n  \"oe_1.5x0.25-label_1.5x0.25in\",\n  \"oe_1.5x0.5-label_1.5x0.5in\",\n  \"oe_1.5x1-label_1.5x1in\",\n  \"oe_1.5x2-label_1.5x2in\",\n\n  \"oe_2x0.37-label_2x0.37in\",\n  \"oe_2x0.5-label_2x0.5in\",\n  \"oe_2x1-label_2x1in\",\n  \"oe_2x1.25-label_2x1.25in\",\n  \"oe_2x2-label_2x2in\",\n  \"oe_2x3-label_2x3in\",\n  \"oe_2x4-label_2x4in\",\n  \"oe_2x5.5-label_2x5.5in\",\n\n  \"roll_max_2x100in\",\n  \"roll_min_0.75x0.25in\"\n};\nstatic const char * const lprint_epl2_4inch_media[] =\n{\t\t\t\t\t// Supported 4 inch media sizes\n  \"oe_1.25x0.25-label_1.25x0.25in\",\n  \"oe_1.25x2.25-label_1.25x2.25in\",\n\n  \"oe_1.5x0.25-label_1.5x0.25in\",\n  \"oe_1.5x0.5-label_1.5x0.5in\",\n  \"oe_1.5x1-label_1.5x1in\",\n  \"oe_1.5x2-label_1.5x2in\",\n\n  \"oe_2x0.37-label_2x0.37in\",\n  \"oe_2x0.5-label_2x0.5in\",\n  \"oe_2x1-label_2x1in\",\n  \"oe_2x1.25-label_2x1.25in\",\n  \"oe_2x2-label_2x2in\",\n  \"oe_2x3-label_2x3in\",\n  \"oe_2x4-label_2x4in\",\n  \"oe_2x5.5-label_2x5.5in\",\n\n  \"oe_2.25x0.5-label_2.25x0.5in\",\n  \"oe_2.25x1.25-label_2.25x1.25in\",\n  \"oe_30859-paint-can-label_2.25x3.125in\",\n  \"oe_2.25x4-label_2.25x4in\",\n  \"oe_2.25x5.5-label_2.25x5.5in\",\n\n  \"oe_2.38x5.5-label_2.38x5.5in\",\n\n  \"oe_2.5x1-label_2.5x1in\",\n  \"oe_2.5x2-label_2.5x2in\",\n\n  \"oe_2.75x1.25-label_2.75x1.25in\",\n\n  \"oe_2.9x1-label_2.9x1in\",\n\n  \"oe_3x1-label_3x1in\",\n  \"oe_3x1.25-label_3x1.25in\",\n  \"oe_3x2-label_3x2in\",\n  \"oe_3x3-label_3x3in\",\n  \"oe_3x5-label_3x5in\",\n\n  \"oe_3.25x2-label_3.25x2in\",\n  \"oe_3.25x5-label_3.25x5in\",\n  \"oe_3.25x5.5-label_3.25x5.5in\",\n  \"oe_3.25x5.83-label_3.25x5.83in\",\n  \"oe_3.25x7.83-label_3.25x7.83in\",\n\n  \"oe_3.5x1-label_3.5x1in\",\n\n  \"oe_4x1-label_4x1in\",\n  \"oe_4x2-label_4x2in\",\n  \"oe_4x3-label_4x3in\",\n  \"oe_4x4-label_4x4in\",\n  \"oe_4x5-label_4x5in\",\n  \"oe_4x6-label_4x6in\",\n  \"oe_4x6.5-label_4x6.5in\",\n  \"oe_4x7.83-label_4x7.83in\",\n  \"oe_4x13-label_4x13in\",\n\n/*  \"oe_6x1-label_6x1in\",\n  \"oe_6x2-label_6x2in\",\n  \"oe_6x3-label_6x3in\",\n  \"oe_6x4-label_6x4in\",\n  \"oe_6x5-label_6x5in\",\n  \"oe_6x6-label_6x6in\",\n  \"oe_6x6.5-label_6x6.5in\",\n  \"oe_6x13-label_6x13in\",\n\n  \"oe_8x1-label_8x1in\",\n  \"oe_8x2-label_8x2in\",\n  \"oe_8x3-label_8x3in\",\n  \"oe_8x4-label_8x4in\",\n  \"oe_8x5-label_8x5in\",\n  \"oe_8x6-label_8x6in\",\n  \"oe_8x6.5-label_8x6.5in\",\n  \"oe_8x13-label_8x13in\",*/\n\n  \"roll_max_4x100in\",\n  \"roll_min_0.75x0.25in\"\n};\n\n\n//\n// Local functions...\n//\n\nstatic bool\tlprint_epl2_printfile(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device);\nstatic bool\tlprint_epl2_rendjob(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device);\nstatic bool\tlprint_epl2_rendpage(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device, unsigned page);\nstatic bool\tlprint_epl2_rstartjob(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device);\nstatic bool\tlprint_epl2_rstartpage(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device, unsigned page);\nstatic bool\tlprint_epl2_rwriteline(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device, unsigned y, const unsigned char *line);\nstatic bool\tlprint_epl2_status(pappl_printer_t *printer);\n\n\n//\n// 'lprintInitEPL2()' - Initialize the driver.\n//\n\nbool\t\t\t\t\t// O - `true` on success, `false` on error\nlprintEPL2(\n    pappl_system_t         *system,\t// I - System\n    const char             *driver_name,// I - Driver name\n    const char             *device_uri,\t// I - Device URI\n    const char             *device_id,\t// I - 1284 device ID\n    pappl_pr_driver_data_t *data,\t// I - Pointer to driver data\n    ipp_t                  **attrs,\t// O - Pointer to driver attributes\n    void                   *cbdata)\t// I - Callback data (not used)\n{\n  data->printfile_cb  = lprint_epl2_printfile;\n  data->rendjob_cb    = lprint_epl2_rendjob;\n  data->rendpage_cb   = lprint_epl2_rendpage;\n  data->rstartjob_cb  = lprint_epl2_rstartjob;\n  data->rstartpage_cb = lprint_epl2_rstartpage;\n  data->rwriteline_cb = lprint_epl2_rwriteline;\n  data->status_cb     = lprint_epl2_status;\n  data->format        = LPRINT_EPL2_MIMETYPE;\n\n  data->num_resolution = 1;\n\n  if (strstr(driver_name, \"-203dpi\"))\n  {\n    data->x_resolution[0] = 203;\n    data->y_resolution[0] = 203;\n  }\n  else\n  {\n    data->x_resolution[0] = 300;\n    data->y_resolution[0] = 300;\n  }\n\n  data->x_default = data->y_default = data->x_resolution[0];\n\n  if (strstr(driver_name, \"-cutter\"))\n    data->finishings |= PAPPL_FINISHINGS_TRIM;\n\n  if (!strncmp(driver_name, \"epl2_2inch-\", 16))\n  {\n    // 2 inch printer...\n    data->num_media = (int)(sizeof(lprint_epl2_2inch_media) / sizeof(lprint_epl2_2inch_media[0]));\n    memcpy(data->media, lprint_epl2_2inch_media, sizeof(lprint_epl2_2inch_media));\n\n    papplCopyString(data->media_ready[0].size_name, \"oe_2x3-label_2x3in\", sizeof(data->media_ready[0].size_name));\n    papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n  }\n  else\n  {\n    // 4 inch printer...\n    data->num_media = (int)(sizeof(lprint_epl2_4inch_media) / sizeof(lprint_epl2_4inch_media[0]));\n    memcpy(data->media, lprint_epl2_4inch_media, sizeof(lprint_epl2_4inch_media));\n\n    papplCopyString(data->media_ready[0].size_name, \"na_index-4x6_4x6in\", sizeof(data->media_ready[0].size_name));\n    papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n  }\n\n  data->bottom_top = data->left_right = 1;\n\n  data->num_source = 1;\n  data->source[0]  = \"main-roll\";\n\n  data->num_type = 3;\n  data->type[0]  = \"continuous\";\n  data->type[1]  = \"labels\";\n  data->type[2]  = \"labels-continuous\";\n\n  data->mode_configured = PAPPL_LABEL_MODE_TEAR_OFF;\n  data->mode_supported = PAPPL_LABEL_MODE_APPLICATOR | PAPPL_LABEL_MODE_CUTTER | PAPPL_LABEL_MODE_CUTTER_DELAYED | PAPPL_LABEL_MODE_KIOSK | PAPPL_LABEL_MODE_PEEL_OFF | PAPPL_LABEL_MODE_PEEL_OFF_PREPEEL | PAPPL_LABEL_MODE_REWIND | PAPPL_LABEL_MODE_RFID | PAPPL_LABEL_MODE_TEAR_OFF;\n\n  data->speed_default      = 0;\n  data->speed_supported[0] = 2540;\n  data->speed_supported[1] = 6 * 2540;\n\n  data->darkness_configured = 50;\n  data->darkness_supported  = 30;\n\n  return (true);\n}\n\n\n//\n// 'lprint_epl2_print()' - Print a file.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_printfile(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device)\t\t// I - Output device\n{\n  int\t\tfd;\t\t\t// Input file\n  ssize_t\tbytes;\t\t\t// Bytes read/written\n  char\t\tbuffer[65536];\t\t// Read/write buffer\n\n\n  // Copy the raw file...\n  papplJobSetImpressions(job, 1);\n\n  if ((fd  = open(papplJobGetFilename(job), O_RDONLY)) < 0)\n  {\n    papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to open print file '%s': %s\", papplJobGetFilename(job), strerror(errno));\n    return (false);\n  }\n\n  while ((bytes = read(fd, buffer, sizeof(buffer))) > 0)\n  {\n    if (papplDeviceWrite(device, buffer, (size_t)bytes) < 0)\n    {\n      papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to send %d bytes to printer.\", (int)bytes);\n      close(fd);\n      return (false);\n    }\n  }\n  close(fd);\n\n  papplJobSetImpressionsCompleted(job, 1);\n\n  return (true);\n}\n\n\n//\n// 'lprint_epl2_rendjob()' - End a job.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_rendjob(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device)\t\t// I - Output device\n{\n  lprint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t\t\t\t\t// Dither buffer\n\n\n  (void)options;\n  (void)device;\n\n  free(dither);\n  papplJobSetData(job, NULL);\n\n  return (true);\n}\n\n\n//\n// 'lprint_epl2_rendpage()' - End a page.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_rendpage(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    unsigned           page)\t\t// I - Page number\n{\n  lprint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t\t\t\t\t// Dither buffer\n\n\n  (void)page;\n\n  lprint_epl2_rwriteline(job, options, device, options->header.cupsHeight, NULL);\n\n  papplDevicePuts(device, \"P1\\n\");\n\n  if (options->finishings & PAPPL_FINISHINGS_TRIM)\n    papplDevicePuts(device, \"C\\n\");\n\n  // Free memory and return...\n  lprintDitherFree(dither);\n\n  return (true);\n}\n\n\n//\n// 'lprint_epl2_rstartjob()' - Start a job.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_rstartjob(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device)\t\t// I - Output device\n{\n  lprint_dither_t *dither = (lprint_dither_t *)calloc(1, sizeof(lprint_dither_t));\n\t\t\t\t\t// Dither buffer\n\n\n  (void)options;\n  (void)device;\n\n  // Save dither buffer for job...\n  papplJobSetData(job, dither);\n\n  return (true);\n}\n\n\n//\n// 'lprint_epl2_rstartpage()' - Start a page.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_rstartpage(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    unsigned           page)\t\t// I - Page number\n{\n  int\t\tips;\t\t\t// Inches per second\n  lprint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t\t\t\t\t// Dither buffer\n  int\t\tdarkness;\t\t// Composite darkness value\n  double\tout_gamma = 1.0;\t// Output gamma correction\n\n\n  (void)page;\n\n  // Initialize the dither buffer...\n  if (options->header.HWResolution[0] == 300)\n    out_gamma = 1.2;\n\n  if (!lprintDitherAlloc(dither, job, options, CUPS_CSPACE_W, out_gamma))\n    return (false);\n\n  // Start a new label...\n  papplDevicePuts(device, \"\\nN\\n\");\n\n  // print-darkness\n  if ((darkness = options->print_darkness + options->darkness_configured) < 0)\n    darkness = 0;\n  else if (darkness > 100)\n    darkness = 100;\n\n  papplDevicePrintf(device, \"D%d\\n\", 15 * darkness / 100);\n\n  // print-speed\n  if ((ips = options->print_speed / 2540) > 0)\n    papplDevicePrintf(device, \"S%d\\n\", ips);\n\n  // Set label width...\n  papplDevicePrintf(device, \"q%u\\n\", dither->out_width * 8);\n\n  return (true);\n}\n\n\n//\n// 'lprint_epl2_rwriteline()' - Write a raster line.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_rwriteline(\n    pappl_job_t         *job,\t\t// I - Job\n    pappl_pr_options_t  *options,\t// I - Job options\n    pappl_device_t      *device,\t// I - Output device\n    unsigned            y,\t\t// I - Line number\n    const unsigned char *line)\t\t// I - Line\n{\n  lprint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t\t\t\t\t// Dither buffer\n\n\n  if (!lprintDitherLine(dither, y, line))\n    return (true);\n\n  if (dither->output[0] || memcmp(dither->output, dither->output + 1, dither->out_width - 1))\n  {\n    // Not a blank line\n    papplDevicePrintf(device, \"GW0,%u,%u,1\\n\", y, dither->out_width);\n    papplDeviceWrite(device, dither->output, dither->out_width);\n    papplDevicePuts(device, \"\\n\");\n  }\n\n  return (true);\n}\n\n\n//\n// 'lprint_epl2_status()' - Get current printer status.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_status(\n    pappl_printer_t *printer)\t\t// I - Printer\n{\n  (void)printer;\n\n  return (true);\n}\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "static_const_char_pointer_array",
+    "start_line": 1,
+    "end_line": 429,
+    "code": "//\n// EPL2 driver for LPrint, a Label Printer Application\n//\n// Copyright \u00a9\u00a02019-2025 by Michael R Sweet.\n//\n// Licensed under Apache License v2.0.  See the file \"LICENSE\" for more\n// information.\n//\n\n#include \"lprint.h\"\n\n\n//\n// Local globals...\n//\n\nstatic const char * const lprint_epl2_2inch_media[] =\n{\t\t\t\t\t// Supported 2 inch media sizes\n  \"oe_1.25x0.25-label_1.25x0.25in\",\n  \"oe_1.25x2.25-label_1.25x2.25in\",\n\n  \"oe_1.5x0.25-label_1.5x0.25in\",\n  \"oe_1.5x0.5-label_1.5x0.5in\",\n  \"oe_1.5x1-label_1.5x1in\",\n  \"oe_1.5x2-label_1.5x2in\",\n\n  \"oe_2x0.37-label_2x0.37in\",\n  \"oe_2x0.5-label_2x0.5in\",\n  \"oe_2x1-label_2x1in\",\n  \"oe_2x1.25-label_2x1.25in\",\n  \"oe_2x2-label_2x2in\",\n  \"oe_2x3-label_2x3in\",\n  \"oe_2x4-label_2x4in\",\n  \"oe_2x5.5-label_2x5.5in\",\n\n  \"roll_max_2x100in\",\n  \"roll_min_0.75x0.25in\"\n};\nstatic const char * const lprint_epl2_4inch_media[] =\n{\t\t\t\t\t// Supported 4 inch media sizes\n  \"oe_1.25x0.25-label_1.25x0.25in\",\n  \"oe_1.25x2.25-label_1.25x2.25in\",\n\n  \"oe_1.5x0.25-label_1.5x0.25in\",\n  \"oe_1.5x0.5-label_1.5x0.5in\",\n  \"oe_1.5x1-label_1.5x1in\",\n  \"oe_1.5x2-label_1.5x2in\",\n\n  \"oe_2x0.37-label_2x0.37in\",\n  \"oe_2x0.5-label_2x0.5in\",\n  \"oe_2x1-label_2x1in\",\n  \"oe_2x1.25-label_2x1.25in\",\n  \"oe_2x2-label_2x2in\",\n  \"oe_2x3-label_2x3in\",\n  \"oe_2x4-label_2x4in\",\n  \"oe_2x5.5-label_2x5.5in\",\n\n  \"oe_2.25x0.5-label_2.25x0.5in\",\n  \"oe_2.25x1.25-label_2.25x1.25in\",\n  \"oe_30859-paint-can-label_2.25x3.125in\",\n  \"oe_2.25x4-label_2.25x4in\",\n  \"oe_2.25x5.5-label_2.25x5.5in\",\n\n  \"oe_2.38x5.5-label_2.38x5.5in\",\n\n  \"oe_2.5x1-label_2.5x1in\",\n  \"oe_2.5x2-label_2.5x2in\",\n\n  \"oe_2.75x1.25-label_2.75x1.25in\",\n\n  \"oe_2.9x1-label_2.9x1in\",\n\n  \"oe_3x1-label_3x1in\",\n  \"oe_3x1.25-label_3x1.25in\",\n  \"oe_3x2-label_3x2in\",\n  \"oe_3x3-label_3x3in\",\n  \"oe_3x5-label_3x5in\",\n\n  \"oe_3.25x2-label_3.25x2in\",\n  \"oe_3.25x5-label_3.25x5in\",\n  \"oe_3.25x5.5-label_3.25x5.5in\",\n  \"oe_3.25x5.83-label_3.25x5.83in\",\n  \"oe_3.25x7.83-label_3.25x7.83in\",\n\n  \"oe_3.5x1-label_3.5x1in\",\n\n  \"oe_4x1-label_4x1in\",\n  \"oe_4x2-label_4x2in\",\n  \"oe_4x3-label_4x3in\",\n  \"oe_4x4-label_4x4in\",\n  \"oe_4x5-label_4x5in\",\n  \"oe_4x6-label_4x6in\",\n  \"oe_4x6.5-label_4x6.5in\",\n  \"oe_4x7.83-label_4x7.83in\",\n  \"oe_4x13-label_4x13in\",\n\n/*  \"oe_6x1-label_6x1in\",\n  \"oe_6x2-label_6x2in\",\n  \"oe_6x3-label_6x3in\",\n  \"oe_6x4-label_6x4in\",\n  \"oe_6x5-label_6x5in\",\n  \"oe_6x6-label_6x6in\",\n  \"oe_6x6.5-label_6x6.5in\",\n  \"oe_6x13-label_6x13in\",\n\n  \"oe_8x1-label_8x1in\",\n  \"oe_8x2-label_8x2in\",\n  \"oe_8x3-label_8x3in\",\n  \"oe_8x4-label_8x4in\",\n  \"oe_8x5-label_8x5in\",\n  \"oe_8x6-label_8x6in\",\n  \"oe_8x6.5-label_8x6.5in\",\n  \"oe_8x13-label_8x13in\",*/\n\n  \"roll_max_4x100in\",\n  \"roll_min_0.75x0.25in\"\n};\n\n\n//\n// Local functions...\n//\n\nstatic bool\tlprint_epl2_printfile(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device);\nstatic bool\tlprint_epl2_rendjob(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device);\nstatic bool\tlprint_epl2_rendpage(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device, unsigned page);\nstatic bool\tlprint_epl2_rstartjob(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device);\nstatic bool\tlprint_epl2_rstartpage(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device, unsigned page);\nstatic bool\tlprint_epl2_rwriteline(pappl_job_t *job, pappl_pr_options_t *options, pappl_device_t *device, unsigned y, const unsigned char *line);\nstatic bool\tlprint_epl2_status(pappl_printer_t *printer);\n\n\n//\n// 'lprintInitEPL2()' - Initialize the driver.\n//\n\nbool\t\t\t\t\t// O - `true` on success, `false` on error\nlprintEPL2(\n    pappl_system_t         *system,\t// I - System\n    const char             *driver_name,// I - Driver name\n    const char             *device_uri,\t// I - Device URI\n    const char             *device_id,\t// I - 1284 device ID\n    pappl_pr_driver_data_t *data,\t// I - Pointer to driver data\n    ipp_t                  **attrs,\t// O - Pointer to driver attributes\n    void                   *cbdata)\t// I - Callback data (not used)\n{\n  data->printfile_cb  = lprint_epl2_printfile;\n  data->rendjob_cb    = lprint_epl2_rendjob;\n  data->rendpage_cb   = lprint_epl2_rendpage;\n  data->rstartjob_cb  = lprint_epl2_rstartjob;\n  data->rstartpage_cb = lprint_epl2_rstartpage;\n  data->rwriteline_cb = lprint_epl2_rwriteline;\n  data->status_cb     = lprint_epl2_status;\n  data->format        = LPRINT_EPL2_MIMETYPE;\n\n  data->num_resolution = 1;\n\n  if (strstr(driver_name, \"-203dpi\"))\n  {\n    data->x_resolution[0] = 203;\n    data->y_resolution[0] = 203;\n  }\n  else\n  {\n    data->x_resolution[0] = 300;\n    data->y_resolution[0] = 300;\n  }\n\n  data->x_default = data->y_default = data->x_resolution[0];\n\n  if (strstr(driver_name, \"-cutter\"))\n    data->finishings |= PAPPL_FINISHINGS_TRIM;\n\n  if (!strncmp(driver_name, \"epl2_2inch-\", 16))\n  {\n    // 2 inch printer...\n    data->num_media = (int)(sizeof(lprint_epl2_2inch_media) / sizeof(lprint_epl2_2inch_media[0]));\n    memcpy(data->media, lprint_epl2_2inch_media, sizeof(lprint_epl2_2inch_media));\n\n    papplCopyString(data->media_ready[0].size_name, \"oe_2x3-label_2x3in\", sizeof(data->media_ready[0].size_name));\n    papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n  }\n  else\n  {\n    // 4 inch printer...\n    data->num_media = (int)(sizeof(lprint_epl2_4inch_media) / sizeof(lprint_epl2_4inch_media[0]));\n    memcpy(data->media, lprint_epl2_4inch_media, sizeof(lprint_epl2_4inch_media));\n\n    papplCopyString(data->media_ready[0].size_name, \"na_index-4x6_4x6in\", sizeof(data->media_ready[0].size_name));\n    papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n  }\n\n  data->bottom_top = data->left_right = 1;\n\n  data->num_source = 1;\n  data->source[0]  = \"main-roll\";\n\n  data->num_type = 3;\n  data->type[0]  = \"continuous\";\n  data->type[1]  = \"labels\";\n  data->type[2]  = \"labels-continuous\";\n\n  data->mode_configured = PAPPL_LABEL_MODE_TEAR_OFF;\n  data->mode_supported = PAPPL_LABEL_MODE_APPLICATOR | PAPPL_LABEL_MODE_CUTTER | PAPPL_LABEL_MODE_CUTTER_DELAYED | PAPPL_LABEL_MODE_KIOSK | PAPPL_LABEL_MODE_PEEL_OFF | PAPPL_LABEL_MODE_PEEL_OFF_PREPEEL | PAPPL_LABEL_MODE_REWIND | PAPPL_LABEL_MODE_RFID | PAPPL_LABEL_MODE_TEAR_OFF;\n\n  data->speed_default      = 0;\n  data->speed_supported[0] = 2540;\n  data->speed_supported[1] = 6 * 2540;\n\n  data->darkness_configured = 50;\n  data->darkness_supported  = 30;\n\n  return (true);\n}\n\n\n//\n// 'lprint_epl2_print()' - Print a file.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_printfile(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device)\t\t// I - Output device\n{\n  int\t\tfd;\t\t\t// Input file\n  ssize_t\tbytes;\t\t\t// Bytes read/written\n  char\t\tbuffer[65536];\t\t// Read/write buffer\n\n\n  // Copy the raw file...\n  papplJobSetImpressions(job, 1);\n\n  if ((fd  = open(papplJobGetFilename(job), O_RDONLY)) < 0)\n  {\n    papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to open print file '%s': %s\", papplJobGetFilename(job), strerror(errno));\n    return (false);\n  }\n\n  while ((bytes = read(fd, buffer, sizeof(buffer))) > 0)\n  {\n    if (papplDeviceWrite(device, buffer, (size_t)bytes) < 0)\n    {\n      papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to send %d bytes to printer.\", (int)bytes);\n      close(fd);\n      return (false);\n    }\n  }\n  close(fd);\n\n  papplJobSetImpressionsCompleted(job, 1);\n\n  return (true);\n}\n\n\n//\n// 'lprint_epl2_rendjob()' - End a job.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_rendjob(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device)\t\t// I - Output device\n{\n  lprint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t\t\t\t\t// Dither buffer\n\n\n  (void)options;\n  (void)device;\n\n  free(dither);\n  papplJobSetData(job, NULL);\n\n  return (true);\n}\n\n\n//\n// 'lprint_epl2_rendpage()' - End a page.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_rendpage(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    unsigned           page)\t\t// I - Page number\n{\n  lprint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t\t\t\t\t// Dither buffer\n\n\n  (void)page;\n\n  lprint_epl2_rwriteline(job, options, device, options->header.cupsHeight, NULL);\n\n  papplDevicePuts(device, \"P1\\n\");\n\n  if (options->finishings & PAPPL_FINISHINGS_TRIM)\n    papplDevicePuts(device, \"C\\n\");\n\n  // Free memory and return...\n  lprintDitherFree(dither);\n\n  return (true);\n}\n\n\n//\n// 'lprint_epl2_rstartjob()' - Start a job.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_rstartjob(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device)\t\t// I - Output device\n{\n  lprint_dither_t *dither = (lprint_dither_t *)calloc(1, sizeof(lprint_dither_t));\n\t\t\t\t\t// Dither buffer\n\n\n  (void)options;\n  (void)device;\n\n  // Save dither buffer for job...\n  papplJobSetData(job, dither);\n\n  return (true);\n}\n\n\n//\n// 'lprint_epl2_rstartpage()' - Start a page.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_rstartpage(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    unsigned           page)\t\t// I - Page number\n{\n  int\t\tips;\t\t\t// Inches per second\n  lprint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t\t\t\t\t// Dither buffer\n  int\t\tdarkness;\t\t// Composite darkness value\n  double\tout_gamma = 1.0;\t// Output gamma correction\n\n\n  (void)page;\n\n  // Initialize the dither buffer...\n  if (options->header.HWResolution[0] == 300)\n    out_gamma = 1.2;\n\n  if (!lprintDitherAlloc(dither, job, options, CUPS_CSPACE_W, out_gamma))\n    return (false);\n\n  // Start a new label...\n  papplDevicePuts(device, \"\\nN\\n\");\n\n  // print-darkness\n  if ((darkness = options->print_darkness + options->darkness_configured) < 0)\n    darkness = 0;\n  else if (darkness > 100)\n    darkness = 100;\n\n  papplDevicePrintf(device, \"D%d\\n\", 15 * darkness / 100);\n\n  // print-speed\n  if ((ips = options->print_speed / 2540) > 0)\n    papplDevicePrintf(device, \"S%d\\n\", ips);\n\n  // Set label width...\n  papplDevicePrintf(device, \"q%u\\n\", dither->out_width * 8);\n\n  return (true);\n}\n\n\n//\n// 'lprint_epl2_rwriteline()' - Write a raster line.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_rwriteline(\n    pappl_job_t         *job,\t\t// I - Job\n    pappl_pr_options_t  *options,\t// I - Job options\n    pappl_device_t      *device,\t// I - Output device\n    unsigned            y,\t\t// I - Line number\n    const unsigned char *line)\t\t// I - Line\n{\n  lprint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t\t\t\t\t// Dither buffer\n\n\n  if (!lprintDitherLine(dither, y, line))\n    return (true);\n\n  if (dither->output[0] || memcmp(dither->output, dither->output + 1, dither->out_width - 1))\n  {\n    // Not a blank line\n    papplDevicePrintf(device, \"GW0,%u,%u,1\\n\", y, dither->out_width);\n    papplDeviceWrite(device, dither->output, dither->out_width);\n    papplDevicePuts(device, \"\\n\");\n  }\n\n  return (true);\n}\n\n\n//\n// 'lprint_epl2_status()' - Get current printer status.\n//\n\nstatic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_status(\n    pappl_printer_t *printer)\t\t// I - Printer\n{\n  (void)printer;\n\n  return (true);\n}\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "include",
+    "start_line": 10,
+    "end_line": 11,
+    "code": "nclude \"lprint.h\"\n\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "global_variable",
+    "start_line": 17,
+    "end_line": 38,
+    "code": "atic const char * const lprint_epl2_2inch_media[] =\n{\t\t\t\t\t// Supported 2 inch media sizes\n  \"oe_1.25x0.25-label_1.25x0.25in\",\n  \"oe_1.25x2.25-label_1.25x2.25in\",\n\n  \"oe_1.5x0.25-label_1.5x0.25in\",\n  \"oe_1.5x0.5-label_1.5x0.5in\",\n  \"oe_1.5x1-label_1.5x1in\",\n  \"oe_1.5x2-label_1.5x2in\",\n\n  \"oe_2x0.37-label_2x0.37in\",\n  \"oe_2x0.5-label_2x0.5in\",\n  \"oe_2x1-label_2x1in\",\n  \"oe_2x1.25-label_2x1.25in\",\n  \"oe_2x2-label_2x2in\",\n  \"oe_2x3-label_2x3in\",\n  \"oe_2x4-label_2x4in\",\n  \"oe_2x5.5-label_2x5.5in\",\n\n  \"roll_max_2x100in\",\n  \"roll_min_0.75x0.25in\"\n};\ns",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 17,
+    "end_line": 38,
+    "code": "atic const char * const lprint_epl2_2inch_media[] =\n{\t\t\t\t\t// Supported 2 inch media sizes\n  \"oe_1.25x0.25-label_1.25x0.25in\",\n  \"oe_1.25x2.25-label_1.25x2.25in\",\n\n  \"oe_1.5x0.25-label_1.5x0.25in\",\n  \"oe_1.5x0.5-label_1.5x0.5in\",\n  \"oe_1.5x1-label_1.5x1in\",\n  \"oe_1.5x2-label_1.5x2in\",\n\n  \"oe_2x0.37-label_2x0.37in\",\n  \"oe_2x0.5-label_2x0.5in\",\n  \"oe_2x1-label_2x1in\",\n  \"oe_2x1.25-label_2x1.25in\",\n  \"oe_2x2-label_2x2in\",\n  \"oe_2x3-label_2x3in\",\n  \"oe_2x4-label_2x4in\",\n  \"oe_2x5.5-label_2x5.5in\",\n\n  \"roll_max_2x100in\",\n  \"roll_min_0.75x0.25in\"\n};\ns",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 17,
+    "end_line": 38,
+    "code": "const lprint_epl2_2inch_media[] =\n{\t\t\t\t\t// Supported 2 inch media sizes\n  \"oe_1.25x0.25-label_1.25x0.25in\",\n  \"oe_1.25x2.25-label_1.25x2.25in\",\n\n  \"oe_1.5x0.25-label_1.5x0.25in\",\n  \"oe_1.5x0.5-label_1.5x0.5in\",\n  \"oe_1.5x1-label_1.5x1in\",\n  \"oe_1.5x2-label_1.5x2in\",\n\n  \"oe_2x0.37-label_2x0.37in\",\n  \"oe_2x0.5-label_2x0.5in\",\n  \"oe_2x1-label_2x1in\",\n  \"oe_2x1.25-label_2x1.25in\",\n  \"oe_2x2-label_2x2in\",\n  \"oe_2x3-label_2x3in\",\n  \"oe_2x4-label_2x4in\",\n  \"oe_2x5.5-label_2x5.5in\",\n\n  \"roll_max_2x100in\",\n  \"roll_min_0.75x0.25in\"\n};\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "global_variable",
+    "start_line": 39,
+    "end_line": 117,
+    "code": "atic const char * const lprint_epl2_4inch_media[] =\n{\t\t\t\t\t// Supported 4 inch media sizes\n  \"oe_1.25x0.25-label_1.25x0.25in\",\n  \"oe_1.25x2.25-label_1.25x2.25in\",\n\n  \"oe_1.5x0.25-label_1.5x0.25in\",\n  \"oe_1.5x0.5-label_1.5x0.5in\",\n  \"oe_1.5x1-label_1.5x1in\",\n  \"oe_1.5x2-label_1.5x2in\",\n\n  \"oe_2x0.37-label_2x0.37in\",\n  \"oe_2x0.5-label_2x0.5in\",\n  \"oe_2x1-label_2x1in\",\n  \"oe_2x1.25-label_2x1.25in\",\n  \"oe_2x2-label_2x2in\",\n  \"oe_2x3-label_2x3in\",\n  \"oe_2x4-label_2x4in\",\n  \"oe_2x5.5-label_2x5.5in\",\n\n  \"oe_2.25x0.5-label_2.25x0.5in\",\n  \"oe_2.25x1.25-label_2.25x1.25in\",\n  \"oe_30859-paint-can-label_2.25x3.125in\",\n  \"oe_2.25x4-label_2.25x4in\",\n  \"oe_2.25x5.5-label_2.25x5.5in\",\n\n  \"oe_2.38x5.5-label_2.38x5.5in\",\n\n  \"oe_2.5x1-label_2.5x1in\",\n  \"oe_2.5x2-label_2.5x2in\",\n\n  \"oe_2.75x1.25-label_2.75x1.25in\",\n\n  \"oe_2.9x1-label_2.9x1in\",\n\n  \"oe_3x1-label_3x1in\",\n  \"oe_3x1.25-label_3x1.25in\",\n  \"oe_3x2-label_3x2in\",\n  \"oe_3x3-label_3x3in\",\n  \"oe_3x5-label_3x5in\",\n\n  \"oe_3.25x2-label_3.25x2in\",\n  \"oe_3.25x5-label_3.25x5in\",\n  \"oe_3.25x5.5-label_3.25x5.5in\",\n  \"oe_3.25x5.83-label_3.25x5.83in\",\n  \"oe_3.25x7.83-label_3.25x7.83in\",\n\n  \"oe_3.5x1-label_3.5x1in\",\n\n  \"oe_4x1-label_4x1in\",\n  \"oe_4x2-label_4x2in\",\n  \"oe_4x3-label_4x3in\",\n  \"oe_4x4-label_4x4in\",\n  \"oe_4x5-label_4x5in\",\n  \"oe_4x6-label_4x6in\",\n  \"oe_4x6.5-label_4x6.5in\",\n  \"oe_4x7.83-label_4x7.83in\",\n  \"oe_4x13-label_4x13in\",\n\n/*  \"oe_6x1-label_6x1in\",\n  \"oe_6x2-label_6x2in\",\n  \"oe_6x3-label_6x3in\",\n  \"oe_6x4-label_6x4in\",\n  \"oe_6x5-label_6x5in\",\n  \"oe_6x6-label_6x6in\",\n  \"oe_6x6.5-label_6x6.5in\",\n  \"oe_6x13-label_6x13in\",\n\n  \"oe_8x1-label_8x1in\",\n  \"oe_8x2-label_8x2in\",\n  \"oe_8x3-label_8x3in\",\n  \"oe_8x4-label_8x4in\",\n  \"oe_8x5-label_8x5in\",\n  \"oe_8x6-label_8x6in\",\n  \"oe_8x6.5-label_8x6.5in\",\n  \"oe_8x13-label_8x13in\",*/\n\n  \"roll_max_4x100in\",\n  \"roll_min_0.75x0.25in\"\n};\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 39,
+    "end_line": 117,
+    "code": "atic const char * const lprint_epl2_4inch_media[] =\n{\t\t\t\t\t// Supported 4 inch media sizes\n  \"oe_1.25x0.25-label_1.25x0.25in\",\n  \"oe_1.25x2.25-label_1.25x2.25in\",\n\n  \"oe_1.5x0.25-label_1.5x0.25in\",\n  \"oe_1.5x0.5-label_1.5x0.5in\",\n  \"oe_1.5x1-label_1.5x1in\",\n  \"oe_1.5x2-label_1.5x2in\",\n\n  \"oe_2x0.37-label_2x0.37in\",\n  \"oe_2x0.5-label_2x0.5in\",\n  \"oe_2x1-label_2x1in\",\n  \"oe_2x1.25-label_2x1.25in\",\n  \"oe_2x2-label_2x2in\",\n  \"oe_2x3-label_2x3in\",\n  \"oe_2x4-label_2x4in\",\n  \"oe_2x5.5-label_2x5.5in\",\n\n  \"oe_2.25x0.5-label_2.25x0.5in\",\n  \"oe_2.25x1.25-label_2.25x1.25in\",\n  \"oe_30859-paint-can-label_2.25x3.125in\",\n  \"oe_2.25x4-label_2.25x4in\",\n  \"oe_2.25x5.5-label_2.25x5.5in\",\n\n  \"oe_2.38x5.5-label_2.38x5.5in\",\n\n  \"oe_2.5x1-label_2.5x1in\",\n  \"oe_2.5x2-label_2.5x2in\",\n\n  \"oe_2.75x1.25-label_2.75x1.25in\",\n\n  \"oe_2.9x1-label_2.9x1in\",\n\n  \"oe_3x1-label_3x1in\",\n  \"oe_3x1.25-label_3x1.25in\",\n  \"oe_3x2-label_3x2in\",\n  \"oe_3x3-label_3x3in\",\n  \"oe_3x5-label_3x5in\",\n\n  \"oe_3.25x2-label_3.25x2in\",\n  \"oe_3.25x5-label_3.25x5in\",\n  \"oe_3.25x5.5-label_3.25x5.5in\",\n  \"oe_3.25x5.83-label_3.25x5.83in\",\n  \"oe_3.25x7.83-label_3.25x7.83in\",\n\n  \"oe_3.5x1-label_3.5x1in\",\n\n  \"oe_4x1-label_4x1in\",\n  \"oe_4x2-label_4x2in\",\n  \"oe_4x3-label_4x3in\",\n  \"oe_4x4-label_4x4in\",\n  \"oe_4x5-label_4x5in\",\n  \"oe_4x6-label_4x6in\",\n  \"oe_4x6.5-label_4x6.5in\",\n  \"oe_4x7.83-label_4x7.83in\",\n  \"oe_4x13-label_4x13in\",\n\n/*  \"oe_6x1-label_6x1in\",\n  \"oe_6x2-label_6x2in\",\n  \"oe_6x3-label_6x3in\",\n  \"oe_6x4-label_6x4in\",\n  \"oe_6x5-label_6x5in\",\n  \"oe_6x6-label_6x6in\",\n  \"oe_6x6.5-label_6x6.5in\",\n  \"oe_6x13-label_6x13in\",\n\n  \"oe_8x1-label_8x1in\",\n  \"oe_8x2-label_8x2in\",\n  \"oe_8x3-label_8x3in\",\n  \"oe_8x4-label_8x4in\",\n  \"oe_8x5-label_8x5in\",\n  \"oe_8x6-label_8x6in\",\n  \"oe_8x6.5-label_8x6.5in\",\n  \"oe_8x13-label_8x13in\",*/\n\n  \"roll_max_4x100in\",\n  \"roll_min_0.75x0.25in\"\n};\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 39,
+    "end_line": 117,
+    "code": "const lprint_epl2_4inch_media[] =\n{\t\t\t\t\t// Supported 4 inch media sizes\n  \"oe_1.25x0.25-label_1.25x0.25in\",\n  \"oe_1.25x2.25-label_1.25x2.25in\",\n\n  \"oe_1.5x0.25-label_1.5x0.25in\",\n  \"oe_1.5x0.5-label_1.5x0.5in\",\n  \"oe_1.5x1-label_1.5x1in\",\n  \"oe_1.5x2-label_1.5x2in\",\n\n  \"oe_2x0.37-label_2x0.37in\",\n  \"oe_2x0.5-label_2x0.5in\",\n  \"oe_2x1-label_2x1in\",\n  \"oe_2x1.25-label_2x1.25in\",\n  \"oe_2x2-label_2x2in\",\n  \"oe_2x3-label_2x3in\",\n  \"oe_2x4-label_2x4in\",\n  \"oe_2x5.5-label_2x5.5in\",\n\n  \"oe_2.25x0.5-label_2.25x0.5in\",\n  \"oe_2.25x1.25-label_2.25x1.25in\",\n  \"oe_30859-paint-can-label_2.25x3.125in\",\n  \"oe_2.25x4-label_2.25x4in\",\n  \"oe_2.25x5.5-label_2.25x5.5in\",\n\n  \"oe_2.38x5.5-label_2.38x5.5in\",\n\n  \"oe_2.5x1-label_2.5x1in\",\n  \"oe_2.5x2-label_2.5x2in\",\n\n  \"oe_2.75x1.25-label_2.75x1.25in\",\n\n  \"oe_2.9x1-label_2.9x1in\",\n\n  \"oe_3x1-label_3x1in\",\n  \"oe_3x1.25-label_3x1.25in\",\n  \"oe_3x2-label_3x2in\",\n  \"oe_3x3-label_3x3in\",\n  \"oe_3x5-label_3x5in\",\n\n  \"oe_3.25x2-label_3.25x2in\",\n  \"oe_3.25x5-label_3.25x5in\",\n  \"oe_3.25x5.5-label_3.25x5.5in\",\n  \"oe_3.25x5.83-label_3.25x5.83in\",\n  \"oe_3.25x7.83-label_3.25x7.83in\",\n\n  \"oe_3.5x1-label_3.5x1in\",\n\n  \"oe_4x1-label_4x1in\",\n  \"oe_4x2-label_4x2in\",\n  \"oe_4x3-label_4x3in\",\n  \"oe_4x4-label_4x4in\",\n  \"oe_4x5-label_4x5in\",\n  \"oe_4x6-label_4x6in\",\n  \"oe_4x6.5-label_4x6.5in\",\n  \"oe_4x7.83-label_4x7.83in\",\n  \"oe_4x13-label_4x13in\",\n\n/*  \"oe_6x1-label_6x1in\",\n  \"oe_6x2-label_6x2in\",\n  \"oe_6x3-label_6x3in\",\n  \"oe_6x4-label_6x4in\",\n  \"oe_6x5-label_6x5in\",\n  \"oe_6x6-label_6x6in\",\n  \"oe_6x6.5-label_6x6.5in\",\n  \"oe_6x13-label_6x13in\",\n\n  \"oe_8x1-label_8x1in\",\n  \"oe_8x2-label_8x2in\",\n  \"oe_8x3-label_8x3in\",\n  \"oe_8x4-label_8x4in\",\n  \"oe_8x5-label_8x5in\",\n  \"oe_8x6-label_8x6in\",\n  \"oe_8x6.5-label_8x6.5in\",\n  \"oe_8x13-label_8x13in\",*/\n\n  \"roll_max_4x100in\",\n  \"roll_min_0.75x0.25in\"\n};\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function",
+    "start_line": 137,
+    "end_line": 214,
+    "name": "lprintEPL2",
+    "parent": null,
+    "hierarchy": "lprintEPL2",
+    "code": "ol\t\t\t\t\t// O - `true` on success, `false` on error\nlprintEPL2(\n    pappl_system_t         *system,\t// I - System\n    const char             *driver_name,// I - Driver name\n    const char             *device_uri,\t// I - Device URI\n    const char             *device_id,\t// I - 1284 device ID\n    pappl_pr_driver_data_t *data,\t// I - Pointer to driver data\n    ipp_t                  **attrs,\t// O - Pointer to driver attributes\n    void                   *cbdata)\t// I - Callback data (not used)\n{\n  data->printfile_cb  = lprint_epl2_printfile;\n  data->rendjob_cb    = lprint_epl2_rendjob;\n  data->rendpage_cb   = lprint_epl2_rendpage;\n  data->rstartjob_cb  = lprint_epl2_rstartjob;\n  data->rstartpage_cb = lprint_epl2_rstartpage;\n  data->rwriteline_cb = lprint_epl2_rwriteline;\n  data->status_cb     = lprint_epl2_status;\n  data->format        = LPRINT_EPL2_MIMETYPE;\n\n  data->num_resolution = 1;\n\n  if (strstr(driver_name, \"-203dpi\"))\n  {\n    data->x_resolution[0] = 203;\n    data->y_resolution[0] = 203;\n  }\n  else\n  {\n    data->x_resolution[0] = 300;\n    data->y_resolution[0] = 300;\n  }\n\n  data->x_default = data->y_default = data->x_resolution[0];\n\n  if (strstr(driver_name, \"-cutter\"))\n    data->finishings |= PAPPL_FINISHINGS_TRIM;\n\n  if (!strncmp(driver_name, \"epl2_2inch-\", 16))\n  {\n    // 2 inch printer...\n    data->num_media = (int)(sizeof(lprint_epl2_2inch_media) / sizeof(lprint_epl2_2inch_media[0]));\n    memcpy(data->media, lprint_epl2_2inch_media, sizeof(lprint_epl2_2inch_media));\n\n    papplCopyString(data->media_ready[0].size_name, \"oe_2x3-label_2x3in\", sizeof(data->media_ready[0].size_name));\n    papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n  }\n  else\n  {\n    // 4 inch printer...\n    data->num_media = (int)(sizeof(lprint_epl2_4inch_media) / sizeof(lprint_epl2_4inch_media[0]));\n    memcpy(data->media, lprint_epl2_4inch_media, sizeof(lprint_epl2_4inch_media));\n\n    papplCopyString(data->media_ready[0].size_name, \"na_index-4x6_4x6in\", sizeof(data->media_ready[0].size_name));\n    papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n  }\n\n  data->bottom_top = data->left_right = 1;\n\n  data->num_source = 1;\n  data->source[0]  = \"main-roll\";\n\n  data->num_type = 3;\n  data->type[0]  = \"continuous\";\n  data->type[1]  = \"labels\";\n  data->type[2]  = \"labels-continuous\";\n\n  data->mode_configured = PAPPL_LABEL_MODE_TEAR_OFF;\n  data->mode_supported = PAPPL_LABEL_MODE_APPLICATOR | PAPPL_LABEL_MODE_CUTTER | PAPPL_LABEL_MODE_CUTTER_DELAYED | PAPPL_LABEL_MODE_KIOSK | PAPPL_LABEL_MODE_PEEL_OFF | PAPPL_LABEL_MODE_PEEL_OFF_PREPEEL | PAPPL_LABEL_MODE_REWIND | PAPPL_LABEL_MODE_RFID | PAPPL_LABEL_MODE_TEAR_OFF;\n\n  data->speed_default      = 0;\n  data->speed_supported[0] = 2540;\n  data->speed_supported[1] = 6 * 2540;\n\n  data->darkness_configured = 50;\n  data->darkness_supported  = 30;\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 137,
+    "end_line": 214,
+    "code": "ol\t\t\t\t\t// O - `true` on success, `false` on error\nlprintEPL2(\n    pappl_system_t         *system,\t// I - System\n    const char             *driver_name,// I - Driver name\n    const char             *device_uri,\t// I - Device URI\n    const char             *device_id,\t// I - 1284 device ID\n    pappl_pr_driver_data_t *data,\t// I - Pointer to driver data\n    ipp_t                  **attrs,\t// O - Pointer to driver attributes\n    void                   *cbdata)\t// I - Callback data (not used)\n{\n  data->printfile_cb  = lprint_epl2_printfile;\n  data->rendjob_cb    = lprint_epl2_rendjob;\n  data->rendpage_cb   = lprint_epl2_rendpage;\n  data->rstartjob_cb  = lprint_epl2_rstartjob;\n  data->rstartpage_cb = lprint_epl2_rstartpage;\n  data->rwriteline_cb = lprint_epl2_rwriteline;\n  data->status_cb     = lprint_epl2_status;\n  data->format        = LPRINT_EPL2_MIMETYPE;\n\n  data->num_resolution = 1;\n\n  if (strstr(driver_name, \"-203dpi\"))\n  {\n    data->x_resolution[0] = 203;\n    data->y_resolution[0] = 203;\n  }\n  else\n  {\n    data->x_resolution[0] = 300;\n    data->y_resolution[0] = 300;\n  }\n\n  data->x_default = data->y_default = data->x_resolution[0];\n\n  if (strstr(driver_name, \"-cutter\"))\n    data->finishings |= PAPPL_FINISHINGS_TRIM;\n\n  if (!strncmp(driver_name, \"epl2_2inch-\", 16))\n  {\n    // 2 inch printer...\n    data->num_media = (int)(sizeof(lprint_epl2_2inch_media) / sizeof(lprint_epl2_2inch_media[0]));\n    memcpy(data->media, lprint_epl2_2inch_media, sizeof(lprint_epl2_2inch_media));\n\n    papplCopyString(data->media_ready[0].size_name, \"oe_2x3-label_2x3in\", sizeof(data->media_ready[0].size_name));\n    papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n  }\n  else\n  {\n    // 4 inch printer...\n    data->num_media = (int)(sizeof(lprint_epl2_4inch_media) / sizeof(lprint_epl2_4inch_media[0]));\n    memcpy(data->media, lprint_epl2_4inch_media, sizeof(lprint_epl2_4inch_media));\n\n    papplCopyString(data->media_ready[0].size_name, \"na_index-4x6_4x6in\", sizeof(data->media_ready[0].size_name));\n    papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n  }\n\n  data->bottom_top = data->left_right = 1;\n\n  data->num_source = 1;\n  data->source[0]  = \"main-roll\";\n\n  data->num_type = 3;\n  data->type[0]  = \"continuous\";\n  data->type[1]  = \"labels\";\n  data->type[2]  = \"labels-continuous\";\n\n  data->mode_configured = PAPPL_LABEL_MODE_TEAR_OFF;\n  data->mode_supported = PAPPL_LABEL_MODE_APPLICATOR | PAPPL_LABEL_MODE_CUTTER | PAPPL_LABEL_MODE_CUTTER_DELAYED | PAPPL_LABEL_MODE_KIOSK | PAPPL_LABEL_MODE_PEEL_OFF | PAPPL_LABEL_MODE_PEEL_OFF_PREPEEL | PAPPL_LABEL_MODE_REWIND | PAPPL_LABEL_MODE_RFID | PAPPL_LABEL_MODE_TEAR_OFF;\n\n  data->speed_default      = 0;\n  data->speed_supported[0] = 2540;\n  data->speed_supported[1] = 6 * 2540;\n\n  data->darkness_configured = 50;\n  data->darkness_supported  = 30;\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 137,
+    "end_line": 214,
+    "code": "ol\t\t\t\t\t// O - `true` on success, `false` on error\nlprintEPL2(\n    pappl_system_t         *system,\t// I - System\n    const char             *driver_name,// I - Driver name\n    const char             *device_uri,\t// I - Device URI\n    const char             *device_id,\t// I - 1284 device ID\n    pappl_pr_driver_data_t *data,\t// I - Pointer to driver data\n    ipp_t                  **attrs,\t// O - Pointer to driver attributes\n    void                   *cbdata)\t// I - Callback data (not used)\n{\n  data->printfile_cb  = lprint_epl2_printfile;\n  data->rendjob_cb    = lprint_epl2_rendjob;\n  data->rendpage_cb   = lprint_epl2_rendpage;\n  data->rstartjob_cb  = lprint_epl2_rstartjob;\n  data->rstartpage_cb = lprint_epl2_rstartpage;\n  data->rwriteline_cb = lprint_epl2_rwriteline;\n  data->status_cb     = lprint_epl2_status;\n  data->format        = LPRINT_EPL2_MIMETYPE;\n\n  data->num_resolution = 1;\n\n  if (strstr(driver_name, \"-203dpi\"))\n  {\n    data->x_resolution[0] = 203;\n    data->y_resolution[0] = 203;\n  }\n  else\n  {\n    data->x_resolution[0] = 300;\n    data->y_resolution[0] = 300;\n  }\n\n  data->x_default = data->y_default = data->x_resolution[0];\n\n  if (strstr(driver_name, \"-cutter\"))\n    data->finishings |= PAPPL_FINISHINGS_TRIM;\n\n  if (!strncmp(driver_name, \"epl2_2inch-\", 16))\n  {\n    // 2 inch printer...\n    data->num_media = (int)(sizeof(lprint_epl2_2inch_media) / sizeof(lprint_epl2_2inch_media[0]));\n    memcpy(data->media, lprint_epl2_2inch_media, sizeof(lprint_epl2_2inch_media));\n\n    papplCopyString(data->media_ready[0].size_name, \"oe_2x3-label_2x3in\", sizeof(data->media_ready[0].size_name));\n    papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n  }\n  else\n  {\n    // 4 inch printer...\n    data->num_media = (int)(sizeof(lprint_epl2_4inch_media) / sizeof(lprint_epl2_4inch_media[0]));\n    memcpy(data->media, lprint_epl2_4inch_media, sizeof(lprint_epl2_4inch_media));\n\n    papplCopyString(data->media_ready[0].size_name, \"na_index-4x6_4x6in\", sizeof(data->media_ready[0].size_name));\n    papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n  }\n\n  data->bottom_top = data->left_right = 1;\n\n  data->num_source = 1;\n  data->source[0]  = \"main-roll\";\n\n  data->num_type = 3;\n  data->type[0]  = \"continuous\";\n  data->type[1]  = \"labels\";\n  data->type[2]  = \"labels-continuous\";\n\n  data->mode_configured = PAPPL_LABEL_MODE_TEAR_OFF;\n  data->mode_supported = PAPPL_LABEL_MODE_APPLICATOR | PAPPL_LABEL_MODE_CUTTER | PAPPL_LABEL_MODE_CUTTER_DELAYED | PAPPL_LABEL_MODE_KIOSK | PAPPL_LABEL_MODE_PEEL_OFF | PAPPL_LABEL_MODE_PEEL_OFF_PREPEEL | PAPPL_LABEL_MODE_REWIND | PAPPL_LABEL_MODE_RFID | PAPPL_LABEL_MODE_TEAR_OFF;\n\n  data->speed_default      = 0;\n  data->speed_supported[0] = 2540;\n  data->speed_supported[1] = 6 * 2540;\n\n  data->darkness_configured = 50;\n  data->darkness_supported  = 30;\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 146,
+    "end_line": 214,
+    "code": "  data->printfile_cb  = lprint_epl2_printfile;\n  data->rendjob_cb    = lprint_epl2_rendjob;\n  data->rendpage_cb   = lprint_epl2_rendpage;\n  data->rstartjob_cb  = lprint_epl2_rstartjob;\n  data->rstartpage_cb = lprint_epl2_rstartpage;\n  data->rwriteline_cb = lprint_epl2_rwriteline;\n  data->status_cb     = lprint_epl2_status;\n  data->format        = LPRINT_EPL2_MIMETYPE;\n\n  data->num_resolution = 1;\n\n  if (strstr(driver_name, \"-203dpi\"))\n  {\n    data->x_resolution[0] = 203;\n    data->y_resolution[0] = 203;\n  }\n  else\n  {\n    data->x_resolution[0] = 300;\n    data->y_resolution[0] = 300;\n  }\n\n  data->x_default = data->y_default = data->x_resolution[0];\n\n  if (strstr(driver_name, \"-cutter\"))\n    data->finishings |= PAPPL_FINISHINGS_TRIM;\n\n  if (!strncmp(driver_name, \"epl2_2inch-\", 16))\n  {\n    // 2 inch printer...\n    data->num_media = (int)(sizeof(lprint_epl2_2inch_media) / sizeof(lprint_epl2_2inch_media[0]));\n    memcpy(data->media, lprint_epl2_2inch_media, sizeof(lprint_epl2_2inch_media));\n\n    papplCopyString(data->media_ready[0].size_name, \"oe_2x3-label_2x3in\", sizeof(data->media_ready[0].size_name));\n    papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n  }\n  else\n  {\n    // 4 inch printer...\n    data->num_media = (int)(sizeof(lprint_epl2_4inch_media) / sizeof(lprint_epl2_4inch_media[0]));\n    memcpy(data->media, lprint_epl2_4inch_media, sizeof(lprint_epl2_4inch_media));\n\n    papplCopyString(data->media_ready[0].size_name, \"na_index-4x6_4x6in\", sizeof(data->media_ready[0].size_name));\n    papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n  }\n\n  data->bottom_top = data->left_right = 1;\n\n  data->num_source = 1;\n  data->source[0]  = \"main-roll\";\n\n  data->num_type = 3;\n  data->type[0]  = \"continuous\";\n  data->type[1]  = \"labels\";\n  data->type[2]  = \"labels-continuous\";\n\n  data->mode_configured = PAPPL_LABEL_MODE_TEAR_OFF;\n  data->mode_supported = PAPPL_LABEL_MODE_APPLICATOR | PAPPL_LABEL_MODE_CUTTER | PAPPL_LABEL_MODE_CUTTER_DELAYED | PAPPL_LABEL_MODE_KIOSK | PAPPL_LABEL_MODE_PEEL_OFF | PAPPL_LABEL_MODE_PEEL_OFF_PREPEEL | PAPPL_LABEL_MODE_REWIND | PAPPL_LABEL_MODE_RFID | PAPPL_LABEL_MODE_TEAR_OFF;\n\n  data->speed_default      = 0;\n  data->speed_supported[0] = 2540;\n  data->speed_supported[1] = 6 * 2540;\n\n  data->darkness_configured = 50;\n  data->darkness_supported  = 30;\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 146,
+    "end_line": 214,
+    "code": "  data->printfile_cb  = lprint_epl2_printfile;\n  data->rendjob_cb    = lprint_epl2_rendjob;\n  data->rendpage_cb   = lprint_epl2_rendpage;\n  data->rstartjob_cb  = lprint_epl2_rstartjob;\n  data->rstartpage_cb = lprint_epl2_rstartpage;\n  data->rwriteline_cb = lprint_epl2_rwriteline;\n  data->status_cb     = lprint_epl2_status;\n  data->format        = LPRINT_EPL2_MIMETYPE;\n\n  data->num_resolution = 1;\n\n  if (strstr(driver_name, \"-203dpi\"))\n  {\n    data->x_resolution[0] = 203;\n    data->y_resolution[0] = 203;\n  }\n  else\n  {\n    data->x_resolution[0] = 300;\n    data->y_resolution[0] = 300;\n  }\n\n  data->x_default = data->y_default = data->x_resolution[0];\n\n  if (strstr(driver_name, \"-cutter\"))\n    data->finishings |= PAPPL_FINISHINGS_TRIM;\n\n  if (!strncmp(driver_name, \"epl2_2inch-\", 16))\n  {\n    // 2 inch printer...\n    data->num_media = (int)(sizeof(lprint_epl2_2inch_media) / sizeof(lprint_epl2_2inch_media[0]));\n    memcpy(data->media, lprint_epl2_2inch_media, sizeof(lprint_epl2_2inch_media));\n\n    papplCopyString(data->media_ready[0].size_name, \"oe_2x3-label_2x3in\", sizeof(data->media_ready[0].size_name));\n    papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n  }\n  else\n  {\n    // 4 inch printer...\n    data->num_media = (int)(sizeof(lprint_epl2_4inch_media) / sizeof(lprint_epl2_4inch_media[0]));\n    memcpy(data->media, lprint_epl2_4inch_media, sizeof(lprint_epl2_4inch_media));\n\n    papplCopyString(data->media_ready[0].size_name, \"na_index-4x6_4x6in\", sizeof(data->media_ready[0].size_name));\n    papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n  }\n\n  data->bottom_top = data->left_right = 1;\n\n  data->num_source = 1;\n  data->source[0]  = \"main-roll\";\n\n  data->num_type = 3;\n  data->type[0]  = \"continuous\";\n  data->type[1]  = \"labels\";\n  data->type[2]  = \"labels-continuous\";\n\n  data->mode_configured = PAPPL_LABEL_MODE_TEAR_OFF;\n  data->mode_supported = PAPPL_LABEL_MODE_APPLICATOR | PAPPL_LABEL_MODE_CUTTER | PAPPL_LABEL_MODE_CUTTER_DELAYED | PAPPL_LABEL_MODE_KIOSK | PAPPL_LABEL_MODE_PEEL_OFF | PAPPL_LABEL_MODE_PEEL_OFF_PREPEEL | PAPPL_LABEL_MODE_REWIND | PAPPL_LABEL_MODE_RFID | PAPPL_LABEL_MODE_TEAR_OFF;\n\n  data->speed_default      = 0;\n  data->speed_supported[0] = 2540;\n  data->speed_supported[1] = 6 * 2540;\n\n  data->darkness_configured = 50;\n  data->darkness_supported  = 30;\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 147,
+    "end_line": 147,
+    "code": "ta->printfile_cb  = lprint_epl2_printfile;\n ",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 147,
+    "end_line": 147,
+    "code": "ta->printfile_cb  = lprint_epl2_printfile;\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 148,
+    "end_line": 148,
+    "code": "ta->rendjob_cb    = lprint_epl2_rendjob;\n ",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 148,
+    "end_line": 148,
+    "code": "ta->rendjob_cb    = lprint_epl2_rendjob;\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 149,
+    "end_line": 149,
+    "code": "ta->rendpage_cb   = lprint_epl2_rendpage;\n ",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 149,
+    "end_line": 149,
+    "code": "ta->rendpage_cb   = lprint_epl2_rendpage;\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 150,
+    "end_line": 150,
+    "code": "ta->rstartjob_cb  = lprint_epl2_rstartjob;\n ",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 150,
+    "end_line": 150,
+    "code": "ta->rstartjob_cb  = lprint_epl2_rstartjob;\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 151,
+    "end_line": 151,
+    "code": "ta->rstartpage_cb = lprint_epl2_rstartpage;\n ",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 151,
+    "end_line": 151,
+    "code": "ta->rstartpage_cb = lprint_epl2_rstartpage;\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 152,
+    "end_line": 152,
+    "code": "ta->rwriteline_cb = lprint_epl2_rwriteline;\n ",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 152,
+    "end_line": 152,
+    "code": "ta->rwriteline_cb = lprint_epl2_rwriteline;\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 153,
+    "end_line": 153,
+    "code": "ta->status_cb     = lprint_epl2_status;\n ",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 153,
+    "end_line": 153,
+    "code": "ta->status_cb     = lprint_epl2_status;\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 154,
+    "end_line": 154,
+    "code": "ta->format        = LPRINT_EPL2_MIMETYPE;\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 154,
+    "end_line": 154,
+    "code": "ta->format        = LPRINT_EPL2_MIMETYPE;\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 156,
+    "end_line": 156,
+    "code": "ta->num_resolution = 1;\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 156,
+    "end_line": 156,
+    "code": "ta->num_resolution = 1;\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 158,
+    "end_line": 167,
+    "code": " (strstr(driver_name, \"-203dpi\"))\n  {\n    data->x_resolution[0] = 203;\n    data->y_resolution[0] = 203;\n  }\n  else\n  {\n    data->x_resolution[0] = 300;\n    data->y_resolution[0] = 300;\n  }\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 158,
+    "end_line": 167,
+    "code": " (strstr(driver_name, \"-203dpi\"))\n  {\n    data->x_resolution[0] = 203;\n    data->y_resolution[0] = 203;\n  }\n  else\n  {\n    data->x_resolution[0] = 300;\n    data->y_resolution[0] = 300;\n  }\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 159,
+    "end_line": 162,
+    "code": "    data->x_resolution[0] = 203;\n    data->y_resolution[0] = 203;\n  }\n ",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 160,
+    "end_line": 160,
+    "code": "ta->x_resolution[0] = 203;\n ",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 160,
+    "end_line": 160,
+    "code": "ta->x_resolution[0] = 203;\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 161,
+    "end_line": 161,
+    "code": "ta->y_resolution[0] = 203;\n ",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 161,
+    "end_line": 161,
+    "code": "ta->y_resolution[0] = 203;\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 163,
+    "end_line": 167,
+    "code": "se\n  {\n    data->x_resolution[0] = 300;\n    data->y_resolution[0] = 300;\n  }\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 164,
+    "end_line": 167,
+    "code": "    data->x_resolution[0] = 300;\n    data->y_resolution[0] = 300;\n  }\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 165,
+    "end_line": 165,
+    "code": "ta->x_resolution[0] = 300;\n ",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 165,
+    "end_line": 165,
+    "code": "ta->x_resolution[0] = 300;\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 166,
+    "end_line": 166,
+    "code": "ta->y_resolution[0] = 300;\n ",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 166,
+    "end_line": 166,
+    "code": "ta->y_resolution[0] = 300;\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 169,
+    "end_line": 169,
+    "code": "ta->x_default = data->y_default = data->x_resolution[0];\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 169,
+    "end_line": 169,
+    "code": "ta->x_default = data->y_default = data->x_resolution[0];\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 169,
+    "end_line": 169,
+    "code": "ta->y_default = data->x_resolution[0];\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 171,
+    "end_line": 172,
+    "code": " (strstr(driver_name, \"-cutter\"))\n    data->finishings |= PAPPL_FINISHINGS_TRIM;\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 171,
+    "end_line": 172,
+    "code": " (strstr(driver_name, \"-cutter\"))\n    data->finishings |= PAPPL_FINISHINGS_TRIM;\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 172,
+    "end_line": 172,
+    "code": "ta->finishings |= PAPPL_FINISHINGS_TRIM;\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 172,
+    "end_line": 172,
+    "code": "ta->finishings |= PAPPL_FINISHINGS_TRIM;\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 174,
+    "end_line": 191,
+    "code": " (!strncmp(driver_name, \"epl2_2inch-\", 16))\n  {\n    // 2 inch printer...\n    data->num_media = (int)(sizeof(lprint_epl2_2inch_media) / sizeof(lprint_epl2_2inch_media[0]));\n    memcpy(data->media, lprint_epl2_2inch_media, sizeof(lprint_epl2_2inch_media));\n\n    papplCopyString(data->media_ready[0].size_name, \"oe_2x3-label_2x3in\", sizeof(data->media_ready[0].size_name));\n    papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n  }\n  else\n  {\n    // 4 inch printer...\n    data->num_media = (int)(sizeof(lprint_epl2_4inch_media) / sizeof(lprint_epl2_4inch_media[0]));\n    memcpy(data->media, lprint_epl2_4inch_media, sizeof(lprint_epl2_4inch_media));\n\n    papplCopyString(data->media_ready[0].size_name, \"na_index-4x6_4x6in\", sizeof(data->media_ready[0].size_name));\n    papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n  }\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 174,
+    "end_line": 191,
+    "code": " (!strncmp(driver_name, \"epl2_2inch-\", 16))\n  {\n    // 2 inch printer...\n    data->num_media = (int)(sizeof(lprint_epl2_2inch_media) / sizeof(lprint_epl2_2inch_media[0]));\n    memcpy(data->media, lprint_epl2_2inch_media, sizeof(lprint_epl2_2inch_media));\n\n    papplCopyString(data->media_ready[0].size_name, \"oe_2x3-label_2x3in\", sizeof(data->media_ready[0].size_name));\n    papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n  }\n  else\n  {\n    // 4 inch printer...\n    data->num_media = (int)(sizeof(lprint_epl2_4inch_media) / sizeof(lprint_epl2_4inch_media[0]));\n    memcpy(data->media, lprint_epl2_4inch_media, sizeof(lprint_epl2_4inch_media));\n\n    papplCopyString(data->media_ready[0].size_name, \"na_index-4x6_4x6in\", sizeof(data->media_ready[0].size_name));\n    papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n  }\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 175,
+    "end_line": 182,
+    "code": "    // 2 inch printer...\n    data->num_media = (int)(sizeof(lprint_epl2_2inch_media) / sizeof(lprint_epl2_2inch_media[0]));\n    memcpy(data->media, lprint_epl2_2inch_media, sizeof(lprint_epl2_2inch_media));\n\n    papplCopyString(data->media_ready[0].size_name, \"oe_2x3-label_2x3in\", sizeof(data->media_ready[0].size_name));\n    papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n  }\n ",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 175,
+    "end_line": 182,
+    "code": "    // 2 inch printer...\n    data->num_media = (int)(sizeof(lprint_epl2_2inch_media) / sizeof(lprint_epl2_2inch_media[0]));\n    memcpy(data->media, lprint_epl2_2inch_media, sizeof(lprint_epl2_2inch_media));\n\n    papplCopyString(data->media_ready[0].size_name, \"oe_2x3-label_2x3in\", sizeof(data->media_ready[0].size_name));\n    papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n  }\n ",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 177,
+    "end_line": 177,
+    "code": "ta->num_media = (int)(sizeof(lprint_epl2_2inch_media) / sizeof(lprint_epl2_2inch_media[0]));\n ",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 177,
+    "end_line": 177,
+    "code": "ta->num_media = (int)(sizeof(lprint_epl2_2inch_media) / sizeof(lprint_epl2_2inch_media[0]));\n ",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 177,
+    "end_line": 177,
+    "code": "ta->num_media = (int)(sizeof(lprint_epl2_2inch_media) / sizeof(lprint_epl2_2inch_media[0]));\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 177,
+    "end_line": 177,
+    "code": "ta->num_media = (int)(sizeof(lprint_epl2_2inch_media) / sizeof(lprint_epl2_2inch_media[0]));\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 183,
+    "end_line": 191,
+    "code": "se\n  {\n    // 4 inch printer...\n    data->num_media = (int)(sizeof(lprint_epl2_4inch_media) / sizeof(lprint_epl2_4inch_media[0]));\n    memcpy(data->media, lprint_epl2_4inch_media, sizeof(lprint_epl2_4inch_media));\n\n    papplCopyString(data->media_ready[0].size_name, \"na_index-4x6_4x6in\", sizeof(data->media_ready[0].size_name));\n    papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n  }\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 183,
+    "end_line": 191,
+    "code": "se\n  {\n    // 4 inch printer...\n    data->num_media = (int)(sizeof(lprint_epl2_4inch_media) / sizeof(lprint_epl2_4inch_media[0]));\n    memcpy(data->media, lprint_epl2_4inch_media, sizeof(lprint_epl2_4inch_media));\n\n    papplCopyString(data->media_ready[0].size_name, \"na_index-4x6_4x6in\", sizeof(data->media_ready[0].size_name));\n    papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n  }\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 184,
+    "end_line": 191,
+    "code": "    // 4 inch printer...\n    data->num_media = (int)(sizeof(lprint_epl2_4inch_media) / sizeof(lprint_epl2_4inch_media[0]));\n    memcpy(data->media, lprint_epl2_4inch_media, sizeof(lprint_epl2_4inch_media));\n\n    papplCopyString(data->media_ready[0].size_name, \"na_index-4x6_4x6in\", sizeof(data->media_ready[0].size_name));\n    papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n  }\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 184,
+    "end_line": 191,
+    "code": "    // 4 inch printer...\n    data->num_media = (int)(sizeof(lprint_epl2_4inch_media) / sizeof(lprint_epl2_4inch_media[0]));\n    memcpy(data->media, lprint_epl2_4inch_media, sizeof(lprint_epl2_4inch_media));\n\n    papplCopyString(data->media_ready[0].size_name, \"na_index-4x6_4x6in\", sizeof(data->media_ready[0].size_name));\n    papplCopyString(data->media_ready[0].type, \"labels\", sizeof(data->media_ready[0].type));\n  }\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 186,
+    "end_line": 186,
+    "code": "ta->num_media = (int)(sizeof(lprint_epl2_4inch_media) / sizeof(lprint_epl2_4inch_media[0]));\n ",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 186,
+    "end_line": 186,
+    "code": "ta->num_media = (int)(sizeof(lprint_epl2_4inch_media) / sizeof(lprint_epl2_4inch_media[0]));\n ",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 186,
+    "end_line": 186,
+    "code": "ta->num_media = (int)(sizeof(lprint_epl2_4inch_media) / sizeof(lprint_epl2_4inch_media[0]));\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 186,
+    "end_line": 186,
+    "code": "ta->num_media = (int)(sizeof(lprint_epl2_4inch_media) / sizeof(lprint_epl2_4inch_media[0]));\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 193,
+    "end_line": 193,
+    "code": "ta->bottom_top = data->left_right = 1;\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 193,
+    "end_line": 193,
+    "code": "ta->bottom_top = data->left_right = 1;\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 193,
+    "end_line": 193,
+    "code": "ta->left_right = 1;\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 195,
+    "end_line": 195,
+    "code": "ta->num_source = 1;\n ",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 195,
+    "end_line": 195,
+    "code": "ta->num_source = 1;\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 196,
+    "end_line": 196,
+    "code": "ta->source[0]  = \"main-roll\";\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 196,
+    "end_line": 196,
+    "code": "ta->source[0]  = \"main-roll\";\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 198,
+    "end_line": 198,
+    "code": "ta->num_type = 3;\n ",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 198,
+    "end_line": 198,
+    "code": "ta->num_type = 3;\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 199,
+    "end_line": 199,
+    "code": "ta->type[0]  = \"continuous\";\n ",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 199,
+    "end_line": 199,
+    "code": "ta->type[0]  = \"continuous\";\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 200,
+    "end_line": 200,
+    "code": "ta->type[1]  = \"labels\";\n ",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 200,
+    "end_line": 200,
+    "code": "ta->type[1]  = \"labels\";\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 201,
+    "end_line": 201,
+    "code": "ta->type[2]  = \"labels-continuous\";\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 201,
+    "end_line": 201,
+    "code": "ta->type[2]  = \"labels-continuous\";\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 203,
+    "end_line": 203,
+    "code": "ta->mode_configured = PAPPL_LABEL_MODE_TEAR_OFF;\n ",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 203,
+    "end_line": 203,
+    "code": "ta->mode_configured = PAPPL_LABEL_MODE_TEAR_OFF;\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 204,
+    "end_line": 204,
+    "code": "ta->mode_supported = PAPPL_LABEL_MODE_APPLICATOR | PAPPL_LABEL_MODE_CUTTER | PAPPL_LABEL_MODE_CUTTER_DELAYED | PAPPL_LABEL_MODE_KIOSK | PAPPL_LABEL_MODE_PEEL_OFF | PAPPL_LABEL_MODE_PEEL_OFF_PREPEEL | PAPPL_LABEL_MODE_REWIND | PAPPL_LABEL_MODE_RFID | PAPPL_LABEL_MODE_TEAR_OFF;\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 204,
+    "end_line": 204,
+    "code": "ta->mode_supported = PAPPL_LABEL_MODE_APPLICATOR | PAPPL_LABEL_MODE_CUTTER | PAPPL_LABEL_MODE_CUTTER_DELAYED | PAPPL_LABEL_MODE_KIOSK | PAPPL_LABEL_MODE_PEEL_OFF | PAPPL_LABEL_MODE_PEEL_OFF_PREPEEL | PAPPL_LABEL_MODE_REWIND | PAPPL_LABEL_MODE_RFID | PAPPL_LABEL_MODE_TEAR_OFF;\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 206,
+    "end_line": 206,
+    "code": "ta->speed_default      = 0;\n ",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 206,
+    "end_line": 206,
+    "code": "ta->speed_default      = 0;\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 207,
+    "end_line": 207,
+    "code": "ta->speed_supported[0] = 2540;\n ",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 207,
+    "end_line": 207,
+    "code": "ta->speed_supported[0] = 2540;\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 208,
+    "end_line": 208,
+    "code": "ta->speed_supported[1] = 6 * 2540;\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 208,
+    "end_line": 208,
+    "code": "ta->speed_supported[1] = 6 * 2540;\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 210,
+    "end_line": 210,
+    "code": "ta->darkness_configured = 50;\n ",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 210,
+    "end_line": 210,
+    "code": "ta->darkness_configured = 50;\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 211,
+    "end_line": 211,
+    "code": "ta->darkness_supported  = 30;\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 211,
+    "end_line": 211,
+    "code": "ta->darkness_supported  = 30;\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function",
+    "start_line": 221,
+    "end_line": 255,
+    "name": "lprint_epl2_printfile",
+    "parent": null,
+    "hierarchy": "lprint_epl2_printfile",
+    "code": "atic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_printfile(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device)\t\t// I - Output device\n{\n  int\t\tfd;\t\t\t// Input file\n  ssize_t\tbytes;\t\t\t// Bytes read/written\n  char\t\tbuffer[65536];\t\t// Read/write buffer\n\n\n  // Copy the raw file...\n  papplJobSetImpressions(job, 1);\n\n  if ((fd  = open(papplJobGetFilename(job), O_RDONLY)) < 0)\n  {\n    papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to open print file '%s': %s\", papplJobGetFilename(job), strerror(errno));\n    return (false);\n  }\n\n  while ((bytes = read(fd, buffer, sizeof(buffer))) > 0)\n  {\n    if (papplDeviceWrite(device, buffer, (size_t)bytes) < 0)\n    {\n      papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to send %d bytes to printer.\", (int)bytes);\n      close(fd);\n      return (false);\n    }\n  }\n  close(fd);\n\n  papplJobSetImpressionsCompleted(job, 1);\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 221,
+    "end_line": 255,
+    "code": "atic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_printfile(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device)\t\t// I - Output device\n{\n  int\t\tfd;\t\t\t// Input file\n  ssize_t\tbytes;\t\t\t// Bytes read/written\n  char\t\tbuffer[65536];\t\t// Read/write buffer\n\n\n  // Copy the raw file...\n  papplJobSetImpressions(job, 1);\n\n  if ((fd  = open(papplJobGetFilename(job), O_RDONLY)) < 0)\n  {\n    papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to open print file '%s': %s\", papplJobGetFilename(job), strerror(errno));\n    return (false);\n  }\n\n  while ((bytes = read(fd, buffer, sizeof(buffer))) > 0)\n  {\n    if (papplDeviceWrite(device, buffer, (size_t)bytes) < 0)\n    {\n      papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to send %d bytes to printer.\", (int)bytes);\n      close(fd);\n      return (false);\n    }\n  }\n  close(fd);\n\n  papplJobSetImpressionsCompleted(job, 1);\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 226,
+    "end_line": 255,
+    "code": "  int\t\tfd;\t\t\t// Input file\n  ssize_t\tbytes;\t\t\t// Bytes read/written\n  char\t\tbuffer[65536];\t\t// Read/write buffer\n\n\n  // Copy the raw file...\n  papplJobSetImpressions(job, 1);\n\n  if ((fd  = open(papplJobGetFilename(job), O_RDONLY)) < 0)\n  {\n    papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to open print file '%s': %s\", papplJobGetFilename(job), strerror(errno));\n    return (false);\n  }\n\n  while ((bytes = read(fd, buffer, sizeof(buffer))) > 0)\n  {\n    if (papplDeviceWrite(device, buffer, (size_t)bytes) < 0)\n    {\n      papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to send %d bytes to printer.\", (int)bytes);\n      close(fd);\n      return (false);\n    }\n  }\n  close(fd);\n\n  papplJobSetImpressionsCompleted(job, 1);\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 241,
+    "end_line": 249,
+    "code": "ile ((bytes = read(fd, buffer, sizeof(buffer))) > 0)\n  {\n    if (papplDeviceWrite(device, buffer, (size_t)bytes) < 0)\n    {\n      papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to send %d bytes to printer.\", (int)bytes);\n      close(fd);\n      return (false);\n    }\n  }\n ",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "anonymous_initializer_block",
+    "start_line": 242,
+    "end_line": 249,
+    "code": "    if (papplDeviceWrite(device, buffer, (size_t)bytes) < 0)\n    {\n      papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to send %d bytes to printer.\", (int)bytes);\n      close(fd);\n      return (false);\n    }\n  }\n ",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "anonymous_initializer_block",
+    "start_line": 243,
+    "end_line": 248,
+    "code": " (papplDeviceWrite(device, buffer, (size_t)bytes) < 0)\n    {\n      papplLogJob(job, PAPPL_LOGLEVEL_ERROR, \"Unable to send %d bytes to printer.\", (int)bytes);\n      close(fd);\n      return (false);\n    }\n ",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function",
+    "start_line": 262,
+    "end_line": 279,
+    "name": "lprint_epl2_rendjob",
+    "parent": null,
+    "hierarchy": "lprint_epl2_rendjob",
+    "code": "atic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_rendjob(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device)\t\t// I - Output device\n{\n  lprint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t\t\t\t\t// Dither buffer\n\n\n  (void)options;\n  (void)device;\n\n  free(dither);\n  papplJobSetData(job, NULL);\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "global_variable",
+    "start_line": 268,
+    "end_line": 268,
+    "code": "rint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function",
+    "start_line": 286,
+    "end_line": 310,
+    "name": "lprint_epl2_rendpage",
+    "parent": null,
+    "hierarchy": "lprint_epl2_rendpage",
+    "code": "atic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_rendpage(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    unsigned           page)\t\t// I - Page number\n{\n  lprint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t\t\t\t\t// Dither buffer\n\n\n  (void)page;\n\n  lprint_epl2_rwriteline(job, options, device, options->header.cupsHeight, NULL);\n\n  papplDevicePuts(device, \"P1\\n\");\n\n  if (options->finishings & PAPPL_FINISHINGS_TRIM)\n    papplDevicePuts(device, \"C\\n\");\n\n  // Free memory and return...\n  lprintDitherFree(dither);\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 286,
+    "end_line": 310,
+    "code": "atic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_rendpage(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    unsigned           page)\t\t// I - Page number\n{\n  lprint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t\t\t\t\t// Dither buffer\n\n\n  (void)page;\n\n  lprint_epl2_rwriteline(job, options, device, options->header.cupsHeight, NULL);\n\n  papplDevicePuts(device, \"P1\\n\");\n\n  if (options->finishings & PAPPL_FINISHINGS_TRIM)\n    papplDevicePuts(device, \"C\\n\");\n\n  // Free memory and return...\n  lprintDitherFree(dither);\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 286,
+    "end_line": 310,
+    "code": "atic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_rendpage(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    unsigned           page)\t\t// I - Page number\n{\n  lprint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t\t\t\t\t// Dither buffer\n\n\n  (void)page;\n\n  lprint_epl2_rwriteline(job, options, device, options->header.cupsHeight, NULL);\n\n  papplDevicePuts(device, \"P1\\n\");\n\n  if (options->finishings & PAPPL_FINISHINGS_TRIM)\n    papplDevicePuts(device, \"C\\n\");\n\n  // Free memory and return...\n  lprintDitherFree(dither);\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 292,
+    "end_line": 310,
+    "code": "  lprint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t\t\t\t\t// Dither buffer\n\n\n  (void)page;\n\n  lprint_epl2_rwriteline(job, options, device, options->header.cupsHeight, NULL);\n\n  papplDevicePuts(device, \"P1\\n\");\n\n  if (options->finishings & PAPPL_FINISHINGS_TRIM)\n    papplDevicePuts(device, \"C\\n\");\n\n  // Free memory and return...\n  lprintDitherFree(dither);\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 292,
+    "end_line": 310,
+    "code": "  lprint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t\t\t\t\t// Dither buffer\n\n\n  (void)page;\n\n  lprint_epl2_rwriteline(job, options, device, options->header.cupsHeight, NULL);\n\n  papplDevicePuts(device, \"P1\\n\");\n\n  if (options->finishings & PAPPL_FINISHINGS_TRIM)\n    papplDevicePuts(device, \"C\\n\");\n\n  // Free memory and return...\n  lprintDitherFree(dither);\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "global_variable",
+    "start_line": 293,
+    "end_line": 293,
+    "code": "rint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function",
+    "start_line": 317,
+    "end_line": 334,
+    "name": "lprint_epl2_rstartjob",
+    "parent": null,
+    "hierarchy": "lprint_epl2_rstartjob",
+    "code": "atic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_rstartjob(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device)\t\t// I - Output device\n{\n  lprint_dither_t *dither = (lprint_dither_t *)calloc(1, sizeof(lprint_dither_t));\n\t\t\t\t\t// Dither buffer\n\n\n  (void)options;\n  (void)device;\n\n  // Save dither buffer for job...\n  papplJobSetData(job, dither);\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 317,
+    "end_line": 334,
+    "code": "atic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_rstartjob(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device)\t\t// I - Output device\n{\n  lprint_dither_t *dither = (lprint_dither_t *)calloc(1, sizeof(lprint_dither_t));\n\t\t\t\t\t// Dither buffer\n\n\n  (void)options;\n  (void)device;\n\n  // Save dither buffer for job...\n  papplJobSetData(job, dither);\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 322,
+    "end_line": 334,
+    "code": "  lprint_dither_t *dither = (lprint_dither_t *)calloc(1, sizeof(lprint_dither_t));\n\t\t\t\t\t// Dither buffer\n\n\n  (void)options;\n  (void)device;\n\n  // Save dither buffer for job...\n  papplJobSetData(job, dither);\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "global_variable",
+    "start_line": 323,
+    "end_line": 323,
+    "code": "rint_dither_t *dither = (lprint_dither_t *)calloc(1, sizeof(lprint_dither_t));\n\t",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function",
+    "start_line": 341,
+    "end_line": 383,
+    "name": "lprint_epl2_rstartpage",
+    "parent": null,
+    "hierarchy": "lprint_epl2_rstartpage",
+    "code": "atic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_rstartpage(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    unsigned           page)\t\t// I - Page number\n{\n  int\t\tips;\t\t\t// Inches per second\n  lprint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t\t\t\t\t// Dither buffer\n  int\t\tdarkness;\t\t// Composite darkness value\n  double\tout_gamma = 1.0;\t// Output gamma correction\n\n\n  (void)page;\n\n  // Initialize the dither buffer...\n  if (options->header.HWResolution[0] == 300)\n    out_gamma = 1.2;\n\n  if (!lprintDitherAlloc(dither, job, options, CUPS_CSPACE_W, out_gamma))\n    return (false);\n\n  // Start a new label...\n  papplDevicePuts(device, \"\\nN\\n\");\n\n  // print-darkness\n  if ((darkness = options->print_darkness + options->darkness_configured) < 0)\n    darkness = 0;\n  else if (darkness > 100)\n    darkness = 100;\n\n  papplDevicePrintf(device, \"D%d\\n\", 15 * darkness / 100);\n\n  // print-speed\n  if ((ips = options->print_speed / 2540) > 0)\n    papplDevicePrintf(device, \"S%d\\n\", ips);\n\n  // Set label width...\n  papplDevicePrintf(device, \"q%u\\n\", dither->out_width * 8);\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 341,
+    "end_line": 383,
+    "code": "atic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_rstartpage(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    unsigned           page)\t\t// I - Page number\n{\n  int\t\tips;\t\t\t// Inches per second\n  lprint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t\t\t\t\t// Dither buffer\n  int\t\tdarkness;\t\t// Composite darkness value\n  double\tout_gamma = 1.0;\t// Output gamma correction\n\n\n  (void)page;\n\n  // Initialize the dither buffer...\n  if (options->header.HWResolution[0] == 300)\n    out_gamma = 1.2;\n\n  if (!lprintDitherAlloc(dither, job, options, CUPS_CSPACE_W, out_gamma))\n    return (false);\n\n  // Start a new label...\n  papplDevicePuts(device, \"\\nN\\n\");\n\n  // print-darkness\n  if ((darkness = options->print_darkness + options->darkness_configured) < 0)\n    darkness = 0;\n  else if (darkness > 100)\n    darkness = 100;\n\n  papplDevicePrintf(device, \"D%d\\n\", 15 * darkness / 100);\n\n  // print-speed\n  if ((ips = options->print_speed / 2540) > 0)\n    papplDevicePrintf(device, \"S%d\\n\", ips);\n\n  // Set label width...\n  papplDevicePrintf(device, \"q%u\\n\", dither->out_width * 8);\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 341,
+    "end_line": 383,
+    "code": "atic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_rstartpage(\n    pappl_job_t        *job,\t\t// I - Job\n    pappl_pr_options_t *options,\t// I - Job options\n    pappl_device_t     *device,\t\t// I - Output device\n    unsigned           page)\t\t// I - Page number\n{\n  int\t\tips;\t\t\t// Inches per second\n  lprint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t\t\t\t\t// Dither buffer\n  int\t\tdarkness;\t\t// Composite darkness value\n  double\tout_gamma = 1.0;\t// Output gamma correction\n\n\n  (void)page;\n\n  // Initialize the dither buffer...\n  if (options->header.HWResolution[0] == 300)\n    out_gamma = 1.2;\n\n  if (!lprintDitherAlloc(dither, job, options, CUPS_CSPACE_W, out_gamma))\n    return (false);\n\n  // Start a new label...\n  papplDevicePuts(device, \"\\nN\\n\");\n\n  // print-darkness\n  if ((darkness = options->print_darkness + options->darkness_configured) < 0)\n    darkness = 0;\n  else if (darkness > 100)\n    darkness = 100;\n\n  papplDevicePrintf(device, \"D%d\\n\", 15 * darkness / 100);\n\n  // print-speed\n  if ((ips = options->print_speed / 2540) > 0)\n    papplDevicePrintf(device, \"S%d\\n\", ips);\n\n  // Set label width...\n  papplDevicePrintf(device, \"q%u\\n\", dither->out_width * 8);\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 347,
+    "end_line": 383,
+    "code": "  int\t\tips;\t\t\t// Inches per second\n  lprint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t\t\t\t\t// Dither buffer\n  int\t\tdarkness;\t\t// Composite darkness value\n  double\tout_gamma = 1.0;\t// Output gamma correction\n\n\n  (void)page;\n\n  // Initialize the dither buffer...\n  if (options->header.HWResolution[0] == 300)\n    out_gamma = 1.2;\n\n  if (!lprintDitherAlloc(dither, job, options, CUPS_CSPACE_W, out_gamma))\n    return (false);\n\n  // Start a new label...\n  papplDevicePuts(device, \"\\nN\\n\");\n\n  // print-darkness\n  if ((darkness = options->print_darkness + options->darkness_configured) < 0)\n    darkness = 0;\n  else if (darkness > 100)\n    darkness = 100;\n\n  papplDevicePrintf(device, \"D%d\\n\", 15 * darkness / 100);\n\n  // print-speed\n  if ((ips = options->print_speed / 2540) > 0)\n    papplDevicePrintf(device, \"S%d\\n\", ips);\n\n  // Set label width...\n  papplDevicePrintf(device, \"q%u\\n\", dither->out_width * 8);\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 347,
+    "end_line": 383,
+    "code": "  int\t\tips;\t\t\t// Inches per second\n  lprint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t\t\t\t\t// Dither buffer\n  int\t\tdarkness;\t\t// Composite darkness value\n  double\tout_gamma = 1.0;\t// Output gamma correction\n\n\n  (void)page;\n\n  // Initialize the dither buffer...\n  if (options->header.HWResolution[0] == 300)\n    out_gamma = 1.2;\n\n  if (!lprintDitherAlloc(dither, job, options, CUPS_CSPACE_W, out_gamma))\n    return (false);\n\n  // Start a new label...\n  papplDevicePuts(device, \"\\nN\\n\");\n\n  // print-darkness\n  if ((darkness = options->print_darkness + options->darkness_configured) < 0)\n    darkness = 0;\n  else if (darkness > 100)\n    darkness = 100;\n\n  papplDevicePrintf(device, \"D%d\\n\", 15 * darkness / 100);\n\n  // print-speed\n  if ((ips = options->print_speed / 2540) > 0)\n    papplDevicePrintf(device, \"S%d\\n\", ips);\n\n  // Set label width...\n  papplDevicePrintf(device, \"q%u\\n\", dither->out_width * 8);\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "global_variable",
+    "start_line": 349,
+    "end_line": 349,
+    "code": "rint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "global_variable",
+    "start_line": 352,
+    "end_line": 352,
+    "code": "uble\tout_gamma = 1.0;\t/",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 352,
+    "end_line": 352,
+    "code": "uble\tout_gamma = 1.0;\t/",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 352,
+    "end_line": 352,
+    "code": "t_gamma = 1.0;\t",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 358,
+    "end_line": 359,
+    "code": " (options->header.HWResolution[0] == 300)\n    out_gamma = 1.2;\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 358,
+    "end_line": 359,
+    "code": " (options->header.HWResolution[0] == 300)\n    out_gamma = 1.2;\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 359,
+    "end_line": 359,
+    "code": "t_gamma = 1.2;\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 359,
+    "end_line": 359,
+    "code": "t_gamma = 1.2;\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 368,
+    "end_line": 371,
+    "code": " ((darkness = options->print_darkness + options->darkness_configured) < 0)\n    darkness = 0;\n  else if (darkness > 100)\n    darkness = 100;\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 368,
+    "end_line": 371,
+    "code": " ((darkness = options->print_darkness + options->darkness_configured) < 0)\n    darkness = 0;\n  else if (darkness > 100)\n    darkness = 100;\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 376,
+    "end_line": 377,
+    "code": " ((ips = options->print_speed / 2540) > 0)\n    papplDevicePrintf(device, \"S%d\\n\", ips);\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 376,
+    "end_line": 377,
+    "code": " ((ips = options->print_speed / 2540) > 0)\n    papplDevicePrintf(device, \"S%d\\n\", ips);\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function",
+    "start_line": 390,
+    "end_line": 414,
+    "name": "lprint_epl2_rwriteline",
+    "parent": null,
+    "hierarchy": "lprint_epl2_rwriteline",
+    "code": "atic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_rwriteline(\n    pappl_job_t         *job,\t\t// I - Job\n    pappl_pr_options_t  *options,\t// I - Job options\n    pappl_device_t      *device,\t// I - Output device\n    unsigned            y,\t\t// I - Line number\n    const unsigned char *line)\t\t// I - Line\n{\n  lprint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t\t\t\t\t// Dither buffer\n\n\n  if (!lprintDitherLine(dither, y, line))\n    return (true);\n\n  if (dither->output[0] || memcmp(dither->output, dither->output + 1, dither->out_width - 1))\n  {\n    // Not a blank line\n    papplDevicePrintf(device, \"GW0,%u,%u,1\\n\", y, dither->out_width);\n    papplDeviceWrite(device, dither->output, dither->out_width);\n    papplDevicePuts(device, \"\\n\");\n  }\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 390,
+    "end_line": 414,
+    "code": "atic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_rwriteline(\n    pappl_job_t         *job,\t\t// I - Job\n    pappl_pr_options_t  *options,\t// I - Job options\n    pappl_device_t      *device,\t// I - Output device\n    unsigned            y,\t\t// I - Line number\n    const unsigned char *line)\t\t// I - Line\n{\n  lprint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t\t\t\t\t// Dither buffer\n\n\n  if (!lprintDitherLine(dither, y, line))\n    return (true);\n\n  if (dither->output[0] || memcmp(dither->output, dither->output + 1, dither->out_width - 1))\n  {\n    // Not a blank line\n    papplDevicePrintf(device, \"GW0,%u,%u,1\\n\", y, dither->out_width);\n    papplDeviceWrite(device, dither->output, dither->out_width);\n    papplDevicePuts(device, \"\\n\");\n  }\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 390,
+    "end_line": 414,
+    "code": "atic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_rwriteline(\n    pappl_job_t         *job,\t\t// I - Job\n    pappl_pr_options_t  *options,\t// I - Job options\n    pappl_device_t      *device,\t// I - Output device\n    unsigned            y,\t\t// I - Line number\n    const unsigned char *line)\t\t// I - Line\n{\n  lprint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t\t\t\t\t// Dither buffer\n\n\n  if (!lprintDitherLine(dither, y, line))\n    return (true);\n\n  if (dither->output[0] || memcmp(dither->output, dither->output + 1, dither->out_width - 1))\n  {\n    // Not a blank line\n    papplDevicePrintf(device, \"GW0,%u,%u,1\\n\", y, dither->out_width);\n    papplDeviceWrite(device, dither->output, dither->out_width);\n    papplDevicePuts(device, \"\\n\");\n  }\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 397,
+    "end_line": 414,
+    "code": "  lprint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t\t\t\t\t// Dither buffer\n\n\n  if (!lprintDitherLine(dither, y, line))\n    return (true);\n\n  if (dither->output[0] || memcmp(dither->output, dither->output + 1, dither->out_width - 1))\n  {\n    // Not a blank line\n    papplDevicePrintf(device, \"GW0,%u,%u,1\\n\", y, dither->out_width);\n    papplDeviceWrite(device, dither->output, dither->out_width);\n    papplDevicePuts(device, \"\\n\");\n  }\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 397,
+    "end_line": 414,
+    "code": "  lprint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t\t\t\t\t// Dither buffer\n\n\n  if (!lprintDitherLine(dither, y, line))\n    return (true);\n\n  if (dither->output[0] || memcmp(dither->output, dither->output + 1, dither->out_width - 1))\n  {\n    // Not a blank line\n    papplDevicePrintf(device, \"GW0,%u,%u,1\\n\", y, dither->out_width);\n    papplDeviceWrite(device, dither->output, dither->out_width);\n    papplDevicePuts(device, \"\\n\");\n  }\n\n  return (true);\n}\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "global_variable",
+    "start_line": 398,
+    "end_line": 398,
+    "code": "rint_dither_t *dither = (lprint_dither_t *)papplJobGetData(job);\n\t",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "anonymous_initializer_block",
+    "start_line": 405,
+    "end_line": 411,
+    "code": " (dither->output[0] || memcmp(dither->output, dither->output + 1, dither->out_width - 1))\n  {\n    // Not a blank line\n    papplDevicePrintf(device, \"GW0,%u,%u,1\\n\", y, dither->out_width);\n    papplDeviceWrite(device, dither->output, dither->out_width);\n    papplDevicePuts(device, \"\\n\");\n  }\n\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  },
+  {
+    "type": "function",
+    "start_line": 421,
+    "end_line": 428,
+    "name": "lprint_epl2_status",
+    "parent": null,
+    "hierarchy": "lprint_epl2_status",
+    "code": "atic bool\t\t\t\t// O - `true` on success, `false` on failure\nlprint_epl2_status(\n    pappl_printer_t *printer)\t\t// I - Printer\n{\n  (void)printer;\n\n  return (true);\n}\n",
+    "file": "data/codebase/lprint/lprint-epl2.c"
+  }
+]

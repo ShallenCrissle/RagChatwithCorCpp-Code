@@ -1,0 +1,587 @@
+[
+  {
+    "type": "struct_assignment",
+    "start_line": 1,
+    "end_line": 179,
+    "code": "//\n// Header file for LPrint, a Label Printer Application\n//\n// Copyright \u00a9\u00a02019-2023 by Michael R Sweet.\n//\n// Licensed under Apache License v2.0.  See the file \"LICENSE\" for more\n// information.\n//\n\n#ifndef LPRINT_H\n#  define LPRINT_H\n#  include \"config.h\"\n#  include <pappl/pappl.h>\n#  include <math.h>\n\n\n//\n// Debug macro...\n//\n\n#  ifdef DEBUG\n#    define LPRINT_DEBUG(...) fprintf(stderr, __VA_ARGS__)\n#  else\n#    define LPRINT_DEBUG(...)\n#  endif // DEBUG\n\n\n//\n// Function annotations...\n//\n\n#  if defined(__GNUC__) || defined(__has_extension)\n#    define LPRINT_FORMAT(a,b)\t__attribute__ ((__format__(__printf__, a,b)))\n#    define LPRINT_NONNULL(...)\t__attribute__ ((nonnull(__VA_ARGS__)))\n#    define LPRINT_NORETURN\t__attribute__ ((noreturn))\n#  else\n#    define LPRINT_FORMAT(a,b)\n#    define LPRINT_NONNULL(...)\n#    define LPRINT_NORETURN\n#  endif // __GNUC__ || __has_extension\n\n\n//\n// The CUPS API is changed in CUPS v3...\n//\n\n#  if CUPS_VERSION_MAJOR < 3\n#    define CUPS_ENCODING_ISO8859_1\tCUPS_ISO8859_1\n#    define CUPS_ENCODING_JIS_X0213\tCUPS_JIS_X0213\n#    define cups_len_t int\n#    define cups_page_header_t cups_page_header2_t\n#    define cupsArrayNew cupsArrayNew3\n#    define cupsLangGetName(lang)\tlang->language\n#    define cupsRasterReadHeader cupsRasterReadHeader2\n#    define cupsRasterWriteHeader cupsRasterWriteHeader2\n#    define httpConnect httpConnect2\n#    define httpGetDateString httpGetDateString2\n#    define httpRead httpRead2\n#    define httpReconnect httpReconnect2\n#    define httpStatusString httpStatus\n#    define httpWrite httpWrite2\n#    define httpWriteResponse(http,code) (httpWriteResponse(http,code) == 0)\n#    define IPP_NUM_CAST (int)\n#    if CUPS_VERSION_MINOR < 3\n#      define HTTP_STATUS_FOUND (http_status_t)302\n#    endif // CUPS_VERSION_MINOR < 3\n#    if CUPS_VERSION_MINOR < 5\n#      define cupsArrayGetCount cupsArrayCount\n#      define cupsArrayGetElement(a,n) cupsArrayIndex(a,(int)n)\n#      define cupsArrayGetFirst cupsArrayFirst\n#      define cupsArrayGetLast cupsArrayLast\n#      define cupsArrayGetNext cupsArrayNext\n#      define cupsArrayGetPrev cupsArrayPrev\n#      define cupsCreateTempFd(prefix,suffix,buffer,bufsize) cupsTempFd(buffer,bufsize)\n#      define cupsGetUser cupsUser\n#      define httpAddrConnect httpAddrConnect2\n#      define httpAddrGetFamily httpAddrFamily\n#      define httpAddrGetLength httpAddrLength\n#      define httpAddrGetString httpAddrString\n#      define httpAddrIsLocalhost httpAddrLocalhost\n#      define httpDecode64(out,outlen,in,end) httpDecode64_2(out,outlen,in)\n#      define httpEncode64(out,outlen,in,inlen,url) httpEncode64_2(out,outlen,in,inlen)\n#      define httpSetEncryption(http,e) (httpEncryption(http,e)>=0)\n#      define ippGetFirstAttribute ippFirstAttribute\n#      define ippGetNextAttribute ippNextAttribute\ntypedef cups_array_func_t cups_array_cb_t;\ntypedef cups_acopy_func_t cups_acopy_cb_t;\ntypedef cups_afree_func_t cups_afree_cb_t;\ntypedef cups_raster_iocb_t cups_raster_cb_t;\ntypedef ipp_copycb_t ipp_copy_cb_t;\n#    else\n#      define httpDecode64 httpDecode64_3\n#      define httpEncode64 httpEncode64_3\n#    endif // CUPS_VERSION_MINOR < 5\n#  else\n#    define cups_len_t size_t\n#    define cups_utf8_t char\n#    define IPP_NUM_CAST (size_t)\n#  endif // CUPS_VERSION_MAJOR < 3\n\n\n//\n// Constants...\n//\n\n#  define LPRINT_TESTPAGE_MIMETYPE\t\"application/vnd.lprint-test\"\n#  define LPRINT_TESTPAGE_HEADER\t\"T*E*S*T*P*A*G*E*\"\n\n#  ifdef LPRINT_EXPERIMENTAL\n#    define LPRINT_BROTHER_PT_CBP_MIMETYPE \"application/vnd.brother-pt-cbp\"\n#    define LPRINT_CPCL_MIMETYPE\t\"application/vnd.zebra-cpcl\"\n#  endif // LPRINT_EXPERIMENTAL\n#  define LPRINT_EPL2_MIMETYPE\t\t\"application/vnd.eltron-epl\"\n#  define LPRINT_SLP_MIMETYPE\t\t\"application/vnd.sii-slp\"\n#  define LPRINT_TSPL_MIMETYPE\t\t\"application/vnd.tsc-tspl\"\n#  define LPRINT_ZPL_MIMETYPE\t\t\"application/vnd.zebra-zpl\"\n\n\n\n//\n// Types...\n//\n\ntypedef struct lprint_dither_s\t\t// Dithering state\n{\n  pappl_dither_t dither;\t\t// Dither matrix to use\n  unsigned char\t*input[4];\t\t// Input lines for dithering (only 3 are needed, 4 makes it easier for ring buffer)\n  unsigned\tin_width,\t\t// Width in pixels\n\t\tin_height,\t\t// Height in lines\n\t\tin_left,\t\t// Left (starting) pixel\n\t\tin_top,\t\t\t// Top-most pixel\n\t\tin_bottom;\t\t// Bottom-most pixel\n  unsigned char\tin_bpp,\t\t\t// Input bits per pixel (1 or 8)\n\t\tin_white;\t\t// Input white pixel value (0 or 255)\n  unsigned char\t*output,\t\t// Output bitmap\n\t\tout_white;\t\t// Output white pixel value (0 or 255)\n  unsigned\tout_width;\t\t// Output width in bytes\n} lprint_dither_t;\n\ntypedef struct lprint_cmedia_s\t\t// Custom label sizes (per-printer/source)\n{\n  char\t\tcustom_name[PAPPL_MAX_SOURCE][128];\n\t\t\t\t\t// Custom media size names\n} lprint_cmedia_t;\n\n\n//\n// Functions...\n//\n\nextern bool\tlprintDitherAlloc(lprint_dither_t *dither, pappl_job_t *job, pappl_pr_options_t *options, cups_cspace_t out_cspace, double out_gamma);\nextern void\tlprintDitherFree(lprint_dither_t *dither);\nextern bool\tlprintDitherLine(lprint_dither_t *dither, unsigned y, const unsigned char *line);\n\nextern bool\tlprintMediaLoad(pappl_printer_t *printer, pappl_pr_driver_data_t *data);\nextern const char *lprintMediaMatch(pappl_printer_t *printer, int source, int width, int length);\nextern bool\tlprintMediaSave(pappl_printer_t *printer, pappl_pr_driver_data_t *data);\nextern bool\tlprintMediaUI(pappl_client_t *client, pappl_printer_t *printer);\nextern void\tlprintMediaUpdate(pappl_printer_t *printer, pappl_pr_driver_data_t *data);\n\nextern unsigned char *lprintPackBitsAlloc(size_t len);\nextern size_t\tlprintPackBitsCompress(unsigned char *dst, const unsigned char *src, size_t len);\n\n#  ifdef LPRINT_EXPERIMENTAL\nextern bool\tlprintBrother(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern bool\tlprintCPCL(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *driver_data, ipp_t **driver_attrs, void *cbdata);\n#  endif // LPRINT_EXPERIMENTAL\nextern bool\tlprintDYMO(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern bool\tlprintEPL2(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern bool\tlprintSII(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern bool\tlprintTestFilterCB(pappl_job_t *job, pappl_device_t *device, void *data);\nextern const char *lprintTestPageCB(pappl_printer_t *printer, char *buffer, size_t bufsize);\nextern bool\tlprintTSPL(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern bool\tlprintZPL(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern void\tlprintZPLQueryDriver(pappl_system_t *system, const char *device_uri, char *name, size_t namesize);\n\n\n#endif // !LPRINT_H\n",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 1,
+    "end_line": 179,
+    "code": "//\n// Header file for LPrint, a Label Printer Application\n//\n// Copyright \u00a9\u00a02019-2023 by Michael R Sweet.\n//\n// Licensed under Apache License v2.0.  See the file \"LICENSE\" for more\n// information.\n//\n\n#ifndef LPRINT_H\n#  define LPRINT_H\n#  include \"config.h\"\n#  include <pappl/pappl.h>\n#  include <math.h>\n\n\n//\n// Debug macro...\n//\n\n#  ifdef DEBUG\n#    define LPRINT_DEBUG(...) fprintf(stderr, __VA_ARGS__)\n#  else\n#    define LPRINT_DEBUG(...)\n#  endif // DEBUG\n\n\n//\n// Function annotations...\n//\n\n#  if defined(__GNUC__) || defined(__has_extension)\n#    define LPRINT_FORMAT(a,b)\t__attribute__ ((__format__(__printf__, a,b)))\n#    define LPRINT_NONNULL(...)\t__attribute__ ((nonnull(__VA_ARGS__)))\n#    define LPRINT_NORETURN\t__attribute__ ((noreturn))\n#  else\n#    define LPRINT_FORMAT(a,b)\n#    define LPRINT_NONNULL(...)\n#    define LPRINT_NORETURN\n#  endif // __GNUC__ || __has_extension\n\n\n//\n// The CUPS API is changed in CUPS v3...\n//\n\n#  if CUPS_VERSION_MAJOR < 3\n#    define CUPS_ENCODING_ISO8859_1\tCUPS_ISO8859_1\n#    define CUPS_ENCODING_JIS_X0213\tCUPS_JIS_X0213\n#    define cups_len_t int\n#    define cups_page_header_t cups_page_header2_t\n#    define cupsArrayNew cupsArrayNew3\n#    define cupsLangGetName(lang)\tlang->language\n#    define cupsRasterReadHeader cupsRasterReadHeader2\n#    define cupsRasterWriteHeader cupsRasterWriteHeader2\n#    define httpConnect httpConnect2\n#    define httpGetDateString httpGetDateString2\n#    define httpRead httpRead2\n#    define httpReconnect httpReconnect2\n#    define httpStatusString httpStatus\n#    define httpWrite httpWrite2\n#    define httpWriteResponse(http,code) (httpWriteResponse(http,code) == 0)\n#    define IPP_NUM_CAST (int)\n#    if CUPS_VERSION_MINOR < 3\n#      define HTTP_STATUS_FOUND (http_status_t)302\n#    endif // CUPS_VERSION_MINOR < 3\n#    if CUPS_VERSION_MINOR < 5\n#      define cupsArrayGetCount cupsArrayCount\n#      define cupsArrayGetElement(a,n) cupsArrayIndex(a,(int)n)\n#      define cupsArrayGetFirst cupsArrayFirst\n#      define cupsArrayGetLast cupsArrayLast\n#      define cupsArrayGetNext cupsArrayNext\n#      define cupsArrayGetPrev cupsArrayPrev\n#      define cupsCreateTempFd(prefix,suffix,buffer,bufsize) cupsTempFd(buffer,bufsize)\n#      define cupsGetUser cupsUser\n#      define httpAddrConnect httpAddrConnect2\n#      define httpAddrGetFamily httpAddrFamily\n#      define httpAddrGetLength httpAddrLength\n#      define httpAddrGetString httpAddrString\n#      define httpAddrIsLocalhost httpAddrLocalhost\n#      define httpDecode64(out,outlen,in,end) httpDecode64_2(out,outlen,in)\n#      define httpEncode64(out,outlen,in,inlen,url) httpEncode64_2(out,outlen,in,inlen)\n#      define httpSetEncryption(http,e) (httpEncryption(http,e)>=0)\n#      define ippGetFirstAttribute ippFirstAttribute\n#      define ippGetNextAttribute ippNextAttribute\ntypedef cups_array_func_t cups_array_cb_t;\ntypedef cups_acopy_func_t cups_acopy_cb_t;\ntypedef cups_afree_func_t cups_afree_cb_t;\ntypedef cups_raster_iocb_t cups_raster_cb_t;\ntypedef ipp_copycb_t ipp_copy_cb_t;\n#    else\n#      define httpDecode64 httpDecode64_3\n#      define httpEncode64 httpEncode64_3\n#    endif // CUPS_VERSION_MINOR < 5\n#  else\n#    define cups_len_t size_t\n#    define cups_utf8_t char\n#    define IPP_NUM_CAST (size_t)\n#  endif // CUPS_VERSION_MAJOR < 3\n\n\n//\n// Constants...\n//\n\n#  define LPRINT_TESTPAGE_MIMETYPE\t\"application/vnd.lprint-test\"\n#  define LPRINT_TESTPAGE_HEADER\t\"T*E*S*T*P*A*G*E*\"\n\n#  ifdef LPRINT_EXPERIMENTAL\n#    define LPRINT_BROTHER_PT_CBP_MIMETYPE \"application/vnd.brother-pt-cbp\"\n#    define LPRINT_CPCL_MIMETYPE\t\"application/vnd.zebra-cpcl\"\n#  endif // LPRINT_EXPERIMENTAL\n#  define LPRINT_EPL2_MIMETYPE\t\t\"application/vnd.eltron-epl\"\n#  define LPRINT_SLP_MIMETYPE\t\t\"application/vnd.sii-slp\"\n#  define LPRINT_TSPL_MIMETYPE\t\t\"application/vnd.tsc-tspl\"\n#  define LPRINT_ZPL_MIMETYPE\t\t\"application/vnd.zebra-zpl\"\n\n\n\n//\n// Types...\n//\n\ntypedef struct lprint_dither_s\t\t// Dithering state\n{\n  pappl_dither_t dither;\t\t// Dither matrix to use\n  unsigned char\t*input[4];\t\t// Input lines for dithering (only 3 are needed, 4 makes it easier for ring buffer)\n  unsigned\tin_width,\t\t// Width in pixels\n\t\tin_height,\t\t// Height in lines\n\t\tin_left,\t\t// Left (starting) pixel\n\t\tin_top,\t\t\t// Top-most pixel\n\t\tin_bottom;\t\t// Bottom-most pixel\n  unsigned char\tin_bpp,\t\t\t// Input bits per pixel (1 or 8)\n\t\tin_white;\t\t// Input white pixel value (0 or 255)\n  unsigned char\t*output,\t\t// Output bitmap\n\t\tout_white;\t\t// Output white pixel value (0 or 255)\n  unsigned\tout_width;\t\t// Output width in bytes\n} lprint_dither_t;\n\ntypedef struct lprint_cmedia_s\t\t// Custom label sizes (per-printer/source)\n{\n  char\t\tcustom_name[PAPPL_MAX_SOURCE][128];\n\t\t\t\t\t// Custom media size names\n} lprint_cmedia_t;\n\n\n//\n// Functions...\n//\n\nextern bool\tlprintDitherAlloc(lprint_dither_t *dither, pappl_job_t *job, pappl_pr_options_t *options, cups_cspace_t out_cspace, double out_gamma);\nextern void\tlprintDitherFree(lprint_dither_t *dither);\nextern bool\tlprintDitherLine(lprint_dither_t *dither, unsigned y, const unsigned char *line);\n\nextern bool\tlprintMediaLoad(pappl_printer_t *printer, pappl_pr_driver_data_t *data);\nextern const char *lprintMediaMatch(pappl_printer_t *printer, int source, int width, int length);\nextern bool\tlprintMediaSave(pappl_printer_t *printer, pappl_pr_driver_data_t *data);\nextern bool\tlprintMediaUI(pappl_client_t *client, pappl_printer_t *printer);\nextern void\tlprintMediaUpdate(pappl_printer_t *printer, pappl_pr_driver_data_t *data);\n\nextern unsigned char *lprintPackBitsAlloc(size_t len);\nextern size_t\tlprintPackBitsCompress(unsigned char *dst, const unsigned char *src, size_t len);\n\n#  ifdef LPRINT_EXPERIMENTAL\nextern bool\tlprintBrother(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern bool\tlprintCPCL(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *driver_data, ipp_t **driver_attrs, void *cbdata);\n#  endif // LPRINT_EXPERIMENTAL\nextern bool\tlprintDYMO(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern bool\tlprintEPL2(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern bool\tlprintSII(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern bool\tlprintTestFilterCB(pappl_job_t *job, pappl_device_t *device, void *data);\nextern const char *lprintTestPageCB(pappl_printer_t *printer, char *buffer, size_t bufsize);\nextern bool\tlprintTSPL(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern bool\tlprintZPL(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern void\tlprintZPLQueryDriver(pappl_system_t *system, const char *device_uri, char *name, size_t namesize);\n\n\n#endif // !LPRINT_H\n",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "preprocessor",
+    "start_line": 10,
+    "end_line": 178,
+    "code": "fndef LPRINT_H\n#  define LPRINT_H\n#  include \"config.h\"\n#  include <pappl/pappl.h>\n#  include <math.h>\n\n\n//\n// Debug macro...\n//\n\n#  ifdef DEBUG\n#    define LPRINT_DEBUG(...) fprintf(stderr, __VA_ARGS__)\n#  else\n#    define LPRINT_DEBUG(...)\n#  endif // DEBUG\n\n\n//\n// Function annotations...\n//\n\n#  if defined(__GNUC__) || defined(__has_extension)\n#    define LPRINT_FORMAT(a,b)\t__attribute__ ((__format__(__printf__, a,b)))\n#    define LPRINT_NONNULL(...)\t__attribute__ ((nonnull(__VA_ARGS__)))\n#    define LPRINT_NORETURN\t__attribute__ ((noreturn))\n#  else\n#    define LPRINT_FORMAT(a,b)\n#    define LPRINT_NONNULL(...)\n#    define LPRINT_NORETURN\n#  endif // __GNUC__ || __has_extension\n\n\n//\n// The CUPS API is changed in CUPS v3...\n//\n\n#  if CUPS_VERSION_MAJOR < 3\n#    define CUPS_ENCODING_ISO8859_1\tCUPS_ISO8859_1\n#    define CUPS_ENCODING_JIS_X0213\tCUPS_JIS_X0213\n#    define cups_len_t int\n#    define cups_page_header_t cups_page_header2_t\n#    define cupsArrayNew cupsArrayNew3\n#    define cupsLangGetName(lang)\tlang->language\n#    define cupsRasterReadHeader cupsRasterReadHeader2\n#    define cupsRasterWriteHeader cupsRasterWriteHeader2\n#    define httpConnect httpConnect2\n#    define httpGetDateString httpGetDateString2\n#    define httpRead httpRead2\n#    define httpReconnect httpReconnect2\n#    define httpStatusString httpStatus\n#    define httpWrite httpWrite2\n#    define httpWriteResponse(http,code) (httpWriteResponse(http,code) == 0)\n#    define IPP_NUM_CAST (int)\n#    if CUPS_VERSION_MINOR < 3\n#      define HTTP_STATUS_FOUND (http_status_t)302\n#    endif // CUPS_VERSION_MINOR < 3\n#    if CUPS_VERSION_MINOR < 5\n#      define cupsArrayGetCount cupsArrayCount\n#      define cupsArrayGetElement(a,n) cupsArrayIndex(a,(int)n)\n#      define cupsArrayGetFirst cupsArrayFirst\n#      define cupsArrayGetLast cupsArrayLast\n#      define cupsArrayGetNext cupsArrayNext\n#      define cupsArrayGetPrev cupsArrayPrev\n#      define cupsCreateTempFd(prefix,suffix,buffer,bufsize) cupsTempFd(buffer,bufsize)\n#      define cupsGetUser cupsUser\n#      define httpAddrConnect httpAddrConnect2\n#      define httpAddrGetFamily httpAddrFamily\n#      define httpAddrGetLength httpAddrLength\n#      define httpAddrGetString httpAddrString\n#      define httpAddrIsLocalhost httpAddrLocalhost\n#      define httpDecode64(out,outlen,in,end) httpDecode64_2(out,outlen,in)\n#      define httpEncode64(out,outlen,in,inlen,url) httpEncode64_2(out,outlen,in,inlen)\n#      define httpSetEncryption(http,e) (httpEncryption(http,e)>=0)\n#      define ippGetFirstAttribute ippFirstAttribute\n#      define ippGetNextAttribute ippNextAttribute\ntypedef cups_array_func_t cups_array_cb_t;\ntypedef cups_acopy_func_t cups_acopy_cb_t;\ntypedef cups_afree_func_t cups_afree_cb_t;\ntypedef cups_raster_iocb_t cups_raster_cb_t;\ntypedef ipp_copycb_t ipp_copy_cb_t;\n#    else\n#      define httpDecode64 httpDecode64_3\n#      define httpEncode64 httpEncode64_3\n#    endif // CUPS_VERSION_MINOR < 5\n#  else\n#    define cups_len_t size_t\n#    define cups_utf8_t char\n#    define IPP_NUM_CAST (size_t)\n#  endif // CUPS_VERSION_MAJOR < 3\n\n\n//\n// Constants...\n//\n\n#  define LPRINT_TESTPAGE_MIMETYPE\t\"application/vnd.lprint-test\"\n#  define LPRINT_TESTPAGE_HEADER\t\"T*E*S*T*P*A*G*E*\"\n\n#  ifdef LPRINT_EXPERIMENTAL\n#    define LPRINT_BROTHER_PT_CBP_MIMETYPE \"application/vnd.brother-pt-cbp\"\n#    define LPRINT_CPCL_MIMETYPE\t\"application/vnd.zebra-cpcl\"\n#  endif // LPRINT_EXPERIMENTAL\n#  define LPRINT_EPL2_MIMETYPE\t\t\"application/vnd.eltron-epl\"\n#  define LPRINT_SLP_MIMETYPE\t\t\"application/vnd.sii-slp\"\n#  define LPRINT_TSPL_MIMETYPE\t\t\"application/vnd.tsc-tspl\"\n#  define LPRINT_ZPL_MIMETYPE\t\t\"application/vnd.zebra-zpl\"\n\n\n\n//\n// Types...\n//\n\ntypedef struct lprint_dither_s\t\t// Dithering state\n{\n  pappl_dither_t dither;\t\t// Dither matrix to use\n  unsigned char\t*input[4];\t\t// Input lines for dithering (only 3 are needed, 4 makes it easier for ring buffer)\n  unsigned\tin_width,\t\t// Width in pixels\n\t\tin_height,\t\t// Height in lines\n\t\tin_left,\t\t// Left (starting) pixel\n\t\tin_top,\t\t\t// Top-most pixel\n\t\tin_bottom;\t\t// Bottom-most pixel\n  unsigned char\tin_bpp,\t\t\t// Input bits per pixel (1 or 8)\n\t\tin_white;\t\t// Input white pixel value (0 or 255)\n  unsigned char\t*output,\t\t// Output bitmap\n\t\tout_white;\t\t// Output white pixel value (0 or 255)\n  unsigned\tout_width;\t\t// Output width in bytes\n} lprint_dither_t;\n\ntypedef struct lprint_cmedia_s\t\t// Custom label sizes (per-printer/source)\n{\n  char\t\tcustom_name[PAPPL_MAX_SOURCE][128];\n\t\t\t\t\t// Custom media size names\n} lprint_cmedia_t;\n\n\n//\n// Functions...\n//\n\nextern bool\tlprintDitherAlloc(lprint_dither_t *dither, pappl_job_t *job, pappl_pr_options_t *options, cups_cspace_t out_cspace, double out_gamma);\nextern void\tlprintDitherFree(lprint_dither_t *dither);\nextern bool\tlprintDitherLine(lprint_dither_t *dither, unsigned y, const unsigned char *line);\n\nextern bool\tlprintMediaLoad(pappl_printer_t *printer, pappl_pr_driver_data_t *data);\nextern const char *lprintMediaMatch(pappl_printer_t *printer, int source, int width, int length);\nextern bool\tlprintMediaSave(pappl_printer_t *printer, pappl_pr_driver_data_t *data);\nextern bool\tlprintMediaUI(pappl_client_t *client, pappl_printer_t *printer);\nextern void\tlprintMediaUpdate(pappl_printer_t *printer, pappl_pr_driver_data_t *data);\n\nextern unsigned char *lprintPackBitsAlloc(size_t len);\nextern size_t\tlprintPackBitsCompress(unsigned char *dst, const unsigned char *src, size_t len);\n\n#  ifdef LPRINT_EXPERIMENTAL\nextern bool\tlprintBrother(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern bool\tlprintCPCL(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *driver_data, ipp_t **driver_attrs, void *cbdata);\n#  endif // LPRINT_EXPERIMENTAL\nextern bool\tlprintDYMO(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern bool\tlprintEPL2(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern bool\tlprintSII(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern bool\tlprintTestFilterCB(pappl_job_t *job, pappl_device_t *device, void *data);\nextern const char *lprintTestPageCB(pappl_printer_t *printer, char *buffer, size_t bufsize);\nextern bool\tlprintTSPL(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern bool\tlprintZPL(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern void\tlprintZPLQueryDriver(pappl_system_t *system, const char *device_uri, char *name, size_t namesize);\n\n\n#endif /",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 10,
+    "end_line": 178,
+    "code": "fndef LPRINT_H\n#  define LPRINT_H\n#  include \"config.h\"\n#  include <pappl/pappl.h>\n#  include <math.h>\n\n\n//\n// Debug macro...\n//\n\n#  ifdef DEBUG\n#    define LPRINT_DEBUG(...) fprintf(stderr, __VA_ARGS__)\n#  else\n#    define LPRINT_DEBUG(...)\n#  endif // DEBUG\n\n\n//\n// Function annotations...\n//\n\n#  if defined(__GNUC__) || defined(__has_extension)\n#    define LPRINT_FORMAT(a,b)\t__attribute__ ((__format__(__printf__, a,b)))\n#    define LPRINT_NONNULL(...)\t__attribute__ ((nonnull(__VA_ARGS__)))\n#    define LPRINT_NORETURN\t__attribute__ ((noreturn))\n#  else\n#    define LPRINT_FORMAT(a,b)\n#    define LPRINT_NONNULL(...)\n#    define LPRINT_NORETURN\n#  endif // __GNUC__ || __has_extension\n\n\n//\n// The CUPS API is changed in CUPS v3...\n//\n\n#  if CUPS_VERSION_MAJOR < 3\n#    define CUPS_ENCODING_ISO8859_1\tCUPS_ISO8859_1\n#    define CUPS_ENCODING_JIS_X0213\tCUPS_JIS_X0213\n#    define cups_len_t int\n#    define cups_page_header_t cups_page_header2_t\n#    define cupsArrayNew cupsArrayNew3\n#    define cupsLangGetName(lang)\tlang->language\n#    define cupsRasterReadHeader cupsRasterReadHeader2\n#    define cupsRasterWriteHeader cupsRasterWriteHeader2\n#    define httpConnect httpConnect2\n#    define httpGetDateString httpGetDateString2\n#    define httpRead httpRead2\n#    define httpReconnect httpReconnect2\n#    define httpStatusString httpStatus\n#    define httpWrite httpWrite2\n#    define httpWriteResponse(http,code) (httpWriteResponse(http,code) == 0)\n#    define IPP_NUM_CAST (int)\n#    if CUPS_VERSION_MINOR < 3\n#      define HTTP_STATUS_FOUND (http_status_t)302\n#    endif // CUPS_VERSION_MINOR < 3\n#    if CUPS_VERSION_MINOR < 5\n#      define cupsArrayGetCount cupsArrayCount\n#      define cupsArrayGetElement(a,n) cupsArrayIndex(a,(int)n)\n#      define cupsArrayGetFirst cupsArrayFirst\n#      define cupsArrayGetLast cupsArrayLast\n#      define cupsArrayGetNext cupsArrayNext\n#      define cupsArrayGetPrev cupsArrayPrev\n#      define cupsCreateTempFd(prefix,suffix,buffer,bufsize) cupsTempFd(buffer,bufsize)\n#      define cupsGetUser cupsUser\n#      define httpAddrConnect httpAddrConnect2\n#      define httpAddrGetFamily httpAddrFamily\n#      define httpAddrGetLength httpAddrLength\n#      define httpAddrGetString httpAddrString\n#      define httpAddrIsLocalhost httpAddrLocalhost\n#      define httpDecode64(out,outlen,in,end) httpDecode64_2(out,outlen,in)\n#      define httpEncode64(out,outlen,in,inlen,url) httpEncode64_2(out,outlen,in,inlen)\n#      define httpSetEncryption(http,e) (httpEncryption(http,e)>=0)\n#      define ippGetFirstAttribute ippFirstAttribute\n#      define ippGetNextAttribute ippNextAttribute\ntypedef cups_array_func_t cups_array_cb_t;\ntypedef cups_acopy_func_t cups_acopy_cb_t;\ntypedef cups_afree_func_t cups_afree_cb_t;\ntypedef cups_raster_iocb_t cups_raster_cb_t;\ntypedef ipp_copycb_t ipp_copy_cb_t;\n#    else\n#      define httpDecode64 httpDecode64_3\n#      define httpEncode64 httpEncode64_3\n#    endif // CUPS_VERSION_MINOR < 5\n#  else\n#    define cups_len_t size_t\n#    define cups_utf8_t char\n#    define IPP_NUM_CAST (size_t)\n#  endif // CUPS_VERSION_MAJOR < 3\n\n\n//\n// Constants...\n//\n\n#  define LPRINT_TESTPAGE_MIMETYPE\t\"application/vnd.lprint-test\"\n#  define LPRINT_TESTPAGE_HEADER\t\"T*E*S*T*P*A*G*E*\"\n\n#  ifdef LPRINT_EXPERIMENTAL\n#    define LPRINT_BROTHER_PT_CBP_MIMETYPE \"application/vnd.brother-pt-cbp\"\n#    define LPRINT_CPCL_MIMETYPE\t\"application/vnd.zebra-cpcl\"\n#  endif // LPRINT_EXPERIMENTAL\n#  define LPRINT_EPL2_MIMETYPE\t\t\"application/vnd.eltron-epl\"\n#  define LPRINT_SLP_MIMETYPE\t\t\"application/vnd.sii-slp\"\n#  define LPRINT_TSPL_MIMETYPE\t\t\"application/vnd.tsc-tspl\"\n#  define LPRINT_ZPL_MIMETYPE\t\t\"application/vnd.zebra-zpl\"\n\n\n\n//\n// Types...\n//\n\ntypedef struct lprint_dither_s\t\t// Dithering state\n{\n  pappl_dither_t dither;\t\t// Dither matrix to use\n  unsigned char\t*input[4];\t\t// Input lines for dithering (only 3 are needed, 4 makes it easier for ring buffer)\n  unsigned\tin_width,\t\t// Width in pixels\n\t\tin_height,\t\t// Height in lines\n\t\tin_left,\t\t// Left (starting) pixel\n\t\tin_top,\t\t\t// Top-most pixel\n\t\tin_bottom;\t\t// Bottom-most pixel\n  unsigned char\tin_bpp,\t\t\t// Input bits per pixel (1 or 8)\n\t\tin_white;\t\t// Input white pixel value (0 or 255)\n  unsigned char\t*output,\t\t// Output bitmap\n\t\tout_white;\t\t// Output white pixel value (0 or 255)\n  unsigned\tout_width;\t\t// Output width in bytes\n} lprint_dither_t;\n\ntypedef struct lprint_cmedia_s\t\t// Custom label sizes (per-printer/source)\n{\n  char\t\tcustom_name[PAPPL_MAX_SOURCE][128];\n\t\t\t\t\t// Custom media size names\n} lprint_cmedia_t;\n\n\n//\n// Functions...\n//\n\nextern bool\tlprintDitherAlloc(lprint_dither_t *dither, pappl_job_t *job, pappl_pr_options_t *options, cups_cspace_t out_cspace, double out_gamma);\nextern void\tlprintDitherFree(lprint_dither_t *dither);\nextern bool\tlprintDitherLine(lprint_dither_t *dither, unsigned y, const unsigned char *line);\n\nextern bool\tlprintMediaLoad(pappl_printer_t *printer, pappl_pr_driver_data_t *data);\nextern const char *lprintMediaMatch(pappl_printer_t *printer, int source, int width, int length);\nextern bool\tlprintMediaSave(pappl_printer_t *printer, pappl_pr_driver_data_t *data);\nextern bool\tlprintMediaUI(pappl_client_t *client, pappl_printer_t *printer);\nextern void\tlprintMediaUpdate(pappl_printer_t *printer, pappl_pr_driver_data_t *data);\n\nextern unsigned char *lprintPackBitsAlloc(size_t len);\nextern size_t\tlprintPackBitsCompress(unsigned char *dst, const unsigned char *src, size_t len);\n\n#  ifdef LPRINT_EXPERIMENTAL\nextern bool\tlprintBrother(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern bool\tlprintCPCL(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *driver_data, ipp_t **driver_attrs, void *cbdata);\n#  endif // LPRINT_EXPERIMENTAL\nextern bool\tlprintDYMO(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern bool\tlprintEPL2(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern bool\tlprintSII(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern bool\tlprintTestFilterCB(pappl_job_t *job, pappl_device_t *device, void *data);\nextern const char *lprintTestPageCB(pappl_printer_t *printer, char *buffer, size_t bufsize);\nextern bool\tlprintTSPL(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern bool\tlprintZPL(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern void\tlprintZPLQueryDriver(pappl_system_t *system, const char *device_uri, char *name, size_t namesize);\n\n\n#endif /",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 10,
+    "end_line": 178,
+    "code": "fndef LPRINT_H\n#  define LPRINT_H\n#  include \"config.h\"\n#  include <pappl/pappl.h>\n#  include <math.h>\n\n\n//\n// Debug macro...\n//\n\n#  ifdef DEBUG\n#    define LPRINT_DEBUG(...) fprintf(stderr, __VA_ARGS__)\n#  else\n#    define LPRINT_DEBUG(...)\n#  endif // DEBUG\n\n\n//\n// Function annotations...\n//\n\n#  if defined(__GNUC__) || defined(__has_extension)\n#    define LPRINT_FORMAT(a,b)\t__attribute__ ((__format__(__printf__, a,b)))\n#    define LPRINT_NONNULL(...)\t__attribute__ ((nonnull(__VA_ARGS__)))\n#    define LPRINT_NORETURN\t__attribute__ ((noreturn))\n#  else\n#    define LPRINT_FORMAT(a,b)\n#    define LPRINT_NONNULL(...)\n#    define LPRINT_NORETURN\n#  endif // __GNUC__ || __has_extension\n\n\n//\n// The CUPS API is changed in CUPS v3...\n//\n\n#  if CUPS_VERSION_MAJOR < 3\n#    define CUPS_ENCODING_ISO8859_1\tCUPS_ISO8859_1\n#    define CUPS_ENCODING_JIS_X0213\tCUPS_JIS_X0213\n#    define cups_len_t int\n#    define cups_page_header_t cups_page_header2_t\n#    define cupsArrayNew cupsArrayNew3\n#    define cupsLangGetName(lang)\tlang->language\n#    define cupsRasterReadHeader cupsRasterReadHeader2\n#    define cupsRasterWriteHeader cupsRasterWriteHeader2\n#    define httpConnect httpConnect2\n#    define httpGetDateString httpGetDateString2\n#    define httpRead httpRead2\n#    define httpReconnect httpReconnect2\n#    define httpStatusString httpStatus\n#    define httpWrite httpWrite2\n#    define httpWriteResponse(http,code) (httpWriteResponse(http,code) == 0)\n#    define IPP_NUM_CAST (int)\n#    if CUPS_VERSION_MINOR < 3\n#      define HTTP_STATUS_FOUND (http_status_t)302\n#    endif // CUPS_VERSION_MINOR < 3\n#    if CUPS_VERSION_MINOR < 5\n#      define cupsArrayGetCount cupsArrayCount\n#      define cupsArrayGetElement(a,n) cupsArrayIndex(a,(int)n)\n#      define cupsArrayGetFirst cupsArrayFirst\n#      define cupsArrayGetLast cupsArrayLast\n#      define cupsArrayGetNext cupsArrayNext\n#      define cupsArrayGetPrev cupsArrayPrev\n#      define cupsCreateTempFd(prefix,suffix,buffer,bufsize) cupsTempFd(buffer,bufsize)\n#      define cupsGetUser cupsUser\n#      define httpAddrConnect httpAddrConnect2\n#      define httpAddrGetFamily httpAddrFamily\n#      define httpAddrGetLength httpAddrLength\n#      define httpAddrGetString httpAddrString\n#      define httpAddrIsLocalhost httpAddrLocalhost\n#      define httpDecode64(out,outlen,in,end) httpDecode64_2(out,outlen,in)\n#      define httpEncode64(out,outlen,in,inlen,url) httpEncode64_2(out,outlen,in,inlen)\n#      define httpSetEncryption(http,e) (httpEncryption(http,e)>=0)\n#      define ippGetFirstAttribute ippFirstAttribute\n#      define ippGetNextAttribute ippNextAttribute\ntypedef cups_array_func_t cups_array_cb_t;\ntypedef cups_acopy_func_t cups_acopy_cb_t;\ntypedef cups_afree_func_t cups_afree_cb_t;\ntypedef cups_raster_iocb_t cups_raster_cb_t;\ntypedef ipp_copycb_t ipp_copy_cb_t;\n#    else\n#      define httpDecode64 httpDecode64_3\n#      define httpEncode64 httpEncode64_3\n#    endif // CUPS_VERSION_MINOR < 5\n#  else\n#    define cups_len_t size_t\n#    define cups_utf8_t char\n#    define IPP_NUM_CAST (size_t)\n#  endif // CUPS_VERSION_MAJOR < 3\n\n\n//\n// Constants...\n//\n\n#  define LPRINT_TESTPAGE_MIMETYPE\t\"application/vnd.lprint-test\"\n#  define LPRINT_TESTPAGE_HEADER\t\"T*E*S*T*P*A*G*E*\"\n\n#  ifdef LPRINT_EXPERIMENTAL\n#    define LPRINT_BROTHER_PT_CBP_MIMETYPE \"application/vnd.brother-pt-cbp\"\n#    define LPRINT_CPCL_MIMETYPE\t\"application/vnd.zebra-cpcl\"\n#  endif // LPRINT_EXPERIMENTAL\n#  define LPRINT_EPL2_MIMETYPE\t\t\"application/vnd.eltron-epl\"\n#  define LPRINT_SLP_MIMETYPE\t\t\"application/vnd.sii-slp\"\n#  define LPRINT_TSPL_MIMETYPE\t\t\"application/vnd.tsc-tspl\"\n#  define LPRINT_ZPL_MIMETYPE\t\t\"application/vnd.zebra-zpl\"\n\n\n\n//\n// Types...\n//\n\ntypedef struct lprint_dither_s\t\t// Dithering state\n{\n  pappl_dither_t dither;\t\t// Dither matrix to use\n  unsigned char\t*input[4];\t\t// Input lines for dithering (only 3 are needed, 4 makes it easier for ring buffer)\n  unsigned\tin_width,\t\t// Width in pixels\n\t\tin_height,\t\t// Height in lines\n\t\tin_left,\t\t// Left (starting) pixel\n\t\tin_top,\t\t\t// Top-most pixel\n\t\tin_bottom;\t\t// Bottom-most pixel\n  unsigned char\tin_bpp,\t\t\t// Input bits per pixel (1 or 8)\n\t\tin_white;\t\t// Input white pixel value (0 or 255)\n  unsigned char\t*output,\t\t// Output bitmap\n\t\tout_white;\t\t// Output white pixel value (0 or 255)\n  unsigned\tout_width;\t\t// Output width in bytes\n} lprint_dither_t;\n\ntypedef struct lprint_cmedia_s\t\t// Custom label sizes (per-printer/source)\n{\n  char\t\tcustom_name[PAPPL_MAX_SOURCE][128];\n\t\t\t\t\t// Custom media size names\n} lprint_cmedia_t;\n\n\n//\n// Functions...\n//\n\nextern bool\tlprintDitherAlloc(lprint_dither_t *dither, pappl_job_t *job, pappl_pr_options_t *options, cups_cspace_t out_cspace, double out_gamma);\nextern void\tlprintDitherFree(lprint_dither_t *dither);\nextern bool\tlprintDitherLine(lprint_dither_t *dither, unsigned y, const unsigned char *line);\n\nextern bool\tlprintMediaLoad(pappl_printer_t *printer, pappl_pr_driver_data_t *data);\nextern const char *lprintMediaMatch(pappl_printer_t *printer, int source, int width, int length);\nextern bool\tlprintMediaSave(pappl_printer_t *printer, pappl_pr_driver_data_t *data);\nextern bool\tlprintMediaUI(pappl_client_t *client, pappl_printer_t *printer);\nextern void\tlprintMediaUpdate(pappl_printer_t *printer, pappl_pr_driver_data_t *data);\n\nextern unsigned char *lprintPackBitsAlloc(size_t len);\nextern size_t\tlprintPackBitsCompress(unsigned char *dst, const unsigned char *src, size_t len);\n\n#  ifdef LPRINT_EXPERIMENTAL\nextern bool\tlprintBrother(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern bool\tlprintCPCL(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *driver_data, ipp_t **driver_attrs, void *cbdata);\n#  endif // LPRINT_EXPERIMENTAL\nextern bool\tlprintDYMO(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern bool\tlprintEPL2(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern bool\tlprintSII(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern bool\tlprintTestFilterCB(pappl_job_t *job, pappl_device_t *device, void *data);\nextern const char *lprintTestPageCB(pappl_printer_t *printer, char *buffer, size_t bufsize);\nextern bool\tlprintTSPL(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern bool\tlprintZPL(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern void\tlprintZPLQueryDriver(pappl_system_t *system, const char *device_uri, char *name, size_t namesize);\n\n\n#endif /",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 11,
+    "end_line": 12,
+    "code": " define LPRINT_H\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "include",
+    "start_line": 12,
+    "end_line": 13,
+    "code": " include \"config.h\"\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "include",
+    "start_line": 13,
+    "end_line": 14,
+    "code": " include <pappl/pappl.h>\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "include",
+    "start_line": 14,
+    "end_line": 15,
+    "code": " include <math.h>\n\n\n",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "preprocessor",
+    "start_line": 21,
+    "end_line": 25,
+    "code": " ifdef DEBUG\n#    define LPRINT_DEBUG(...) fprintf(stderr, __VA_ARGS__)\n#  else\n#    define LPRINT_DEBUG(...)\n#  endif /",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro_function",
+    "start_line": 22,
+    "end_line": 23,
+    "code": "   define LPRINT_DEBUG(...) fprintf(stderr, __VA_ARGS__)\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro_function",
+    "start_line": 24,
+    "end_line": 25,
+    "code": "   define LPRINT_DEBUG(...)\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "preprocessor",
+    "start_line": 32,
+    "end_line": 40,
+    "code": " if defined(__GNUC__) || defined(__has_extension)\n#    define LPRINT_FORMAT(a,b)\t__attribute__ ((__format__(__printf__, a,b)))\n#    define LPRINT_NONNULL(...)\t__attribute__ ((nonnull(__VA_ARGS__)))\n#    define LPRINT_NORETURN\t__attribute__ ((noreturn))\n#  else\n#    define LPRINT_FORMAT(a,b)\n#    define LPRINT_NONNULL(...)\n#    define LPRINT_NORETURN\n#  endif /",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro_function",
+    "start_line": 33,
+    "end_line": 34,
+    "code": "   define LPRINT_FORMAT(a,b)\t__attribute__ ((__format__(__printf__, a,b)))\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro_function",
+    "start_line": 34,
+    "end_line": 35,
+    "code": "   define LPRINT_NONNULL(...)\t__attribute__ ((nonnull(__VA_ARGS__)))\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 35,
+    "end_line": 36,
+    "code": "   define LPRINT_NORETURN\t__attribute__ ((noreturn))\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro_function",
+    "start_line": 37,
+    "end_line": 38,
+    "code": "   define LPRINT_FORMAT(a,b)\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro_function",
+    "start_line": 38,
+    "end_line": 39,
+    "code": "   define LPRINT_NONNULL(...)\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 39,
+    "end_line": 40,
+    "code": "   define LPRINT_NORETURN\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "preprocessor",
+    "start_line": 47,
+    "end_line": 99,
+    "code": " if CUPS_VERSION_MAJOR < 3\n#    define CUPS_ENCODING_ISO8859_1\tCUPS_ISO8859_1\n#    define CUPS_ENCODING_JIS_X0213\tCUPS_JIS_X0213\n#    define cups_len_t int\n#    define cups_page_header_t cups_page_header2_t\n#    define cupsArrayNew cupsArrayNew3\n#    define cupsLangGetName(lang)\tlang->language\n#    define cupsRasterReadHeader cupsRasterReadHeader2\n#    define cupsRasterWriteHeader cupsRasterWriteHeader2\n#    define httpConnect httpConnect2\n#    define httpGetDateString httpGetDateString2\n#    define httpRead httpRead2\n#    define httpReconnect httpReconnect2\n#    define httpStatusString httpStatus\n#    define httpWrite httpWrite2\n#    define httpWriteResponse(http,code) (httpWriteResponse(http,code) == 0)\n#    define IPP_NUM_CAST (int)\n#    if CUPS_VERSION_MINOR < 3\n#      define HTTP_STATUS_FOUND (http_status_t)302\n#    endif // CUPS_VERSION_MINOR < 3\n#    if CUPS_VERSION_MINOR < 5\n#      define cupsArrayGetCount cupsArrayCount\n#      define cupsArrayGetElement(a,n) cupsArrayIndex(a,(int)n)\n#      define cupsArrayGetFirst cupsArrayFirst\n#      define cupsArrayGetLast cupsArrayLast\n#      define cupsArrayGetNext cupsArrayNext\n#      define cupsArrayGetPrev cupsArrayPrev\n#      define cupsCreateTempFd(prefix,suffix,buffer,bufsize) cupsTempFd(buffer,bufsize)\n#      define cupsGetUser cupsUser\n#      define httpAddrConnect httpAddrConnect2\n#      define httpAddrGetFamily httpAddrFamily\n#      define httpAddrGetLength httpAddrLength\n#      define httpAddrGetString httpAddrString\n#      define httpAddrIsLocalhost httpAddrLocalhost\n#      define httpDecode64(out,outlen,in,end) httpDecode64_2(out,outlen,in)\n#      define httpEncode64(out,outlen,in,inlen,url) httpEncode64_2(out,outlen,in,inlen)\n#      define httpSetEncryption(http,e) (httpEncryption(http,e)>=0)\n#      define ippGetFirstAttribute ippFirstAttribute\n#      define ippGetNextAttribute ippNextAttribute\ntypedef cups_array_func_t cups_array_cb_t;\ntypedef cups_acopy_func_t cups_acopy_cb_t;\ntypedef cups_afree_func_t cups_afree_cb_t;\ntypedef cups_raster_iocb_t cups_raster_cb_t;\ntypedef ipp_copycb_t ipp_copy_cb_t;\n#    else\n#      define httpDecode64 httpDecode64_3\n#      define httpEncode64 httpEncode64_3\n#    endif // CUPS_VERSION_MINOR < 5\n#  else\n#    define cups_len_t size_t\n#    define cups_utf8_t char\n#    define IPP_NUM_CAST (size_t)\n#  endif /",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 47,
+    "end_line": 99,
+    "code": " if CUPS_VERSION_MAJOR < 3\n#    define CUPS_ENCODING_ISO8859_1\tCUPS_ISO8859_1\n#    define CUPS_ENCODING_JIS_X0213\tCUPS_JIS_X0213\n#    define cups_len_t int\n#    define cups_page_header_t cups_page_header2_t\n#    define cupsArrayNew cupsArrayNew3\n#    define cupsLangGetName(lang)\tlang->language\n#    define cupsRasterReadHeader cupsRasterReadHeader2\n#    define cupsRasterWriteHeader cupsRasterWriteHeader2\n#    define httpConnect httpConnect2\n#    define httpGetDateString httpGetDateString2\n#    define httpRead httpRead2\n#    define httpReconnect httpReconnect2\n#    define httpStatusString httpStatus\n#    define httpWrite httpWrite2\n#    define httpWriteResponse(http,code) (httpWriteResponse(http,code) == 0)\n#    define IPP_NUM_CAST (int)\n#    if CUPS_VERSION_MINOR < 3\n#      define HTTP_STATUS_FOUND (http_status_t)302\n#    endif // CUPS_VERSION_MINOR < 3\n#    if CUPS_VERSION_MINOR < 5\n#      define cupsArrayGetCount cupsArrayCount\n#      define cupsArrayGetElement(a,n) cupsArrayIndex(a,(int)n)\n#      define cupsArrayGetFirst cupsArrayFirst\n#      define cupsArrayGetLast cupsArrayLast\n#      define cupsArrayGetNext cupsArrayNext\n#      define cupsArrayGetPrev cupsArrayPrev\n#      define cupsCreateTempFd(prefix,suffix,buffer,bufsize) cupsTempFd(buffer,bufsize)\n#      define cupsGetUser cupsUser\n#      define httpAddrConnect httpAddrConnect2\n#      define httpAddrGetFamily httpAddrFamily\n#      define httpAddrGetLength httpAddrLength\n#      define httpAddrGetString httpAddrString\n#      define httpAddrIsLocalhost httpAddrLocalhost\n#      define httpDecode64(out,outlen,in,end) httpDecode64_2(out,outlen,in)\n#      define httpEncode64(out,outlen,in,inlen,url) httpEncode64_2(out,outlen,in,inlen)\n#      define httpSetEncryption(http,e) (httpEncryption(http,e)>=0)\n#      define ippGetFirstAttribute ippFirstAttribute\n#      define ippGetNextAttribute ippNextAttribute\ntypedef cups_array_func_t cups_array_cb_t;\ntypedef cups_acopy_func_t cups_acopy_cb_t;\ntypedef cups_afree_func_t cups_afree_cb_t;\ntypedef cups_raster_iocb_t cups_raster_cb_t;\ntypedef ipp_copycb_t ipp_copy_cb_t;\n#    else\n#      define httpDecode64 httpDecode64_3\n#      define httpEncode64 httpEncode64_3\n#    endif // CUPS_VERSION_MINOR < 5\n#  else\n#    define cups_len_t size_t\n#    define cups_utf8_t char\n#    define IPP_NUM_CAST (size_t)\n#  endif /",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 47,
+    "end_line": 99,
+    "code": " if CUPS_VERSION_MAJOR < 3\n#    define CUPS_ENCODING_ISO8859_1\tCUPS_ISO8859_1\n#    define CUPS_ENCODING_JIS_X0213\tCUPS_JIS_X0213\n#    define cups_len_t int\n#    define cups_page_header_t cups_page_header2_t\n#    define cupsArrayNew cupsArrayNew3\n#    define cupsLangGetName(lang)\tlang->language\n#    define cupsRasterReadHeader cupsRasterReadHeader2\n#    define cupsRasterWriteHeader cupsRasterWriteHeader2\n#    define httpConnect httpConnect2\n#    define httpGetDateString httpGetDateString2\n#    define httpRead httpRead2\n#    define httpReconnect httpReconnect2\n#    define httpStatusString httpStatus\n#    define httpWrite httpWrite2\n#    define httpWriteResponse(http,code) (httpWriteResponse(http,code) == 0)\n#    define IPP_NUM_CAST (int)\n#    if CUPS_VERSION_MINOR < 3\n#      define HTTP_STATUS_FOUND (http_status_t)302\n#    endif // CUPS_VERSION_MINOR < 3\n#    if CUPS_VERSION_MINOR < 5\n#      define cupsArrayGetCount cupsArrayCount\n#      define cupsArrayGetElement(a,n) cupsArrayIndex(a,(int)n)\n#      define cupsArrayGetFirst cupsArrayFirst\n#      define cupsArrayGetLast cupsArrayLast\n#      define cupsArrayGetNext cupsArrayNext\n#      define cupsArrayGetPrev cupsArrayPrev\n#      define cupsCreateTempFd(prefix,suffix,buffer,bufsize) cupsTempFd(buffer,bufsize)\n#      define cupsGetUser cupsUser\n#      define httpAddrConnect httpAddrConnect2\n#      define httpAddrGetFamily httpAddrFamily\n#      define httpAddrGetLength httpAddrLength\n#      define httpAddrGetString httpAddrString\n#      define httpAddrIsLocalhost httpAddrLocalhost\n#      define httpDecode64(out,outlen,in,end) httpDecode64_2(out,outlen,in)\n#      define httpEncode64(out,outlen,in,inlen,url) httpEncode64_2(out,outlen,in,inlen)\n#      define httpSetEncryption(http,e) (httpEncryption(http,e)>=0)\n#      define ippGetFirstAttribute ippFirstAttribute\n#      define ippGetNextAttribute ippNextAttribute\ntypedef cups_array_func_t cups_array_cb_t;\ntypedef cups_acopy_func_t cups_acopy_cb_t;\ntypedef cups_afree_func_t cups_afree_cb_t;\ntypedef cups_raster_iocb_t cups_raster_cb_t;\ntypedef ipp_copycb_t ipp_copy_cb_t;\n#    else\n#      define httpDecode64 httpDecode64_3\n#      define httpEncode64 httpEncode64_3\n#    endif // CUPS_VERSION_MINOR < 5\n#  else\n#    define cups_len_t size_t\n#    define cups_utf8_t char\n#    define IPP_NUM_CAST (size_t)\n#  endif /",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 48,
+    "end_line": 49,
+    "code": "   define CUPS_ENCODING_ISO8859_1\tCUPS_ISO8859_1\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 49,
+    "end_line": 50,
+    "code": "   define CUPS_ENCODING_JIS_X0213\tCUPS_JIS_X0213\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 50,
+    "end_line": 51,
+    "code": "   define cups_len_t int\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 51,
+    "end_line": 52,
+    "code": "   define cups_page_header_t cups_page_header2_t\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 52,
+    "end_line": 53,
+    "code": "   define cupsArrayNew cupsArrayNew3\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro_function",
+    "start_line": 53,
+    "end_line": 54,
+    "code": "   define cupsLangGetName(lang)\tlang->language\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 54,
+    "end_line": 55,
+    "code": "   define cupsRasterReadHeader cupsRasterReadHeader2\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 55,
+    "end_line": 56,
+    "code": "   define cupsRasterWriteHeader cupsRasterWriteHeader2\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 56,
+    "end_line": 57,
+    "code": "   define httpConnect httpConnect2\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 57,
+    "end_line": 58,
+    "code": "   define httpGetDateString httpGetDateString2\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 58,
+    "end_line": 59,
+    "code": "   define httpRead httpRead2\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 59,
+    "end_line": 60,
+    "code": "   define httpReconnect httpReconnect2\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 60,
+    "end_line": 61,
+    "code": "   define httpStatusString httpStatus\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 61,
+    "end_line": 62,
+    "code": "   define httpWrite httpWrite2\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro_function",
+    "start_line": 62,
+    "end_line": 63,
+    "code": "   define httpWriteResponse(http,code) (httpWriteResponse(http,code) == 0)\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 63,
+    "end_line": 64,
+    "code": "   define IPP_NUM_CAST (int)\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "preprocessor",
+    "start_line": 64,
+    "end_line": 66,
+    "code": "   if CUPS_VERSION_MINOR < 3\n#      define HTTP_STATUS_FOUND (http_status_t)302\n#    endif /",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 65,
+    "end_line": 66,
+    "code": "     define HTTP_STATUS_FOUND (http_status_t)302\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "preprocessor",
+    "start_line": 67,
+    "end_line": 94,
+    "code": "   if CUPS_VERSION_MINOR < 5\n#      define cupsArrayGetCount cupsArrayCount\n#      define cupsArrayGetElement(a,n) cupsArrayIndex(a,(int)n)\n#      define cupsArrayGetFirst cupsArrayFirst\n#      define cupsArrayGetLast cupsArrayLast\n#      define cupsArrayGetNext cupsArrayNext\n#      define cupsArrayGetPrev cupsArrayPrev\n#      define cupsCreateTempFd(prefix,suffix,buffer,bufsize) cupsTempFd(buffer,bufsize)\n#      define cupsGetUser cupsUser\n#      define httpAddrConnect httpAddrConnect2\n#      define httpAddrGetFamily httpAddrFamily\n#      define httpAddrGetLength httpAddrLength\n#      define httpAddrGetString httpAddrString\n#      define httpAddrIsLocalhost httpAddrLocalhost\n#      define httpDecode64(out,outlen,in,end) httpDecode64_2(out,outlen,in)\n#      define httpEncode64(out,outlen,in,inlen,url) httpEncode64_2(out,outlen,in,inlen)\n#      define httpSetEncryption(http,e) (httpEncryption(http,e)>=0)\n#      define ippGetFirstAttribute ippFirstAttribute\n#      define ippGetNextAttribute ippNextAttribute\ntypedef cups_array_func_t cups_array_cb_t;\ntypedef cups_acopy_func_t cups_acopy_cb_t;\ntypedef cups_afree_func_t cups_afree_cb_t;\ntypedef cups_raster_iocb_t cups_raster_cb_t;\ntypedef ipp_copycb_t ipp_copy_cb_t;\n#    else\n#      define httpDecode64 httpDecode64_3\n#      define httpEncode64 httpEncode64_3\n#    endif /",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 68,
+    "end_line": 69,
+    "code": "     define cupsArrayGetCount cupsArrayCount\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro_function",
+    "start_line": 69,
+    "end_line": 70,
+    "code": "     define cupsArrayGetElement(a,n) cupsArrayIndex(a,(int)n)\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 70,
+    "end_line": 71,
+    "code": "     define cupsArrayGetFirst cupsArrayFirst\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 71,
+    "end_line": 72,
+    "code": "     define cupsArrayGetLast cupsArrayLast\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 72,
+    "end_line": 73,
+    "code": "     define cupsArrayGetNext cupsArrayNext\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 73,
+    "end_line": 74,
+    "code": "     define cupsArrayGetPrev cupsArrayPrev\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro_function",
+    "start_line": 74,
+    "end_line": 75,
+    "code": "     define cupsCreateTempFd(prefix,suffix,buffer,bufsize) cupsTempFd(buffer,bufsize)\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 75,
+    "end_line": 76,
+    "code": "     define cupsGetUser cupsUser\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 76,
+    "end_line": 77,
+    "code": "     define httpAddrConnect httpAddrConnect2\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 77,
+    "end_line": 78,
+    "code": "     define httpAddrGetFamily httpAddrFamily\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 78,
+    "end_line": 79,
+    "code": "     define httpAddrGetLength httpAddrLength\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 79,
+    "end_line": 80,
+    "code": "     define httpAddrGetString httpAddrString\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 80,
+    "end_line": 81,
+    "code": "     define httpAddrIsLocalhost httpAddrLocalhost\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro_function",
+    "start_line": 81,
+    "end_line": 82,
+    "code": "     define httpDecode64(out,outlen,in,end) httpDecode64_2(out,outlen,in)\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro_function",
+    "start_line": 82,
+    "end_line": 83,
+    "code": "     define httpEncode64(out,outlen,in,inlen,url) httpEncode64_2(out,outlen,in,inlen)\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro_function",
+    "start_line": 83,
+    "end_line": 84,
+    "code": "     define httpSetEncryption(http,e) (httpEncryption(http,e)>=0)\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 84,
+    "end_line": 85,
+    "code": "     define ippGetFirstAttribute ippFirstAttribute\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 85,
+    "end_line": 86,
+    "code": "     define ippGetNextAttribute ippNextAttribute\nty",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "typedef",
+    "start_line": 86,
+    "end_line": 86,
+    "code": "pedef cups_array_func_t cups_array_cb_t;\nt",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "typedef",
+    "start_line": 87,
+    "end_line": 87,
+    "code": "pedef cups_acopy_func_t cups_acopy_cb_t;\nt",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "typedef",
+    "start_line": 88,
+    "end_line": 88,
+    "code": "pedef cups_afree_func_t cups_afree_cb_t;\nt",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "typedef",
+    "start_line": 89,
+    "end_line": 89,
+    "code": "pedef cups_raster_iocb_t cups_raster_cb_t;\nt",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "typedef",
+    "start_line": 90,
+    "end_line": 90,
+    "code": "pedef ipp_copycb_t ipp_copy_cb_t;\n#",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 92,
+    "end_line": 93,
+    "code": "     define httpDecode64 httpDecode64_3\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 93,
+    "end_line": 94,
+    "code": "     define httpEncode64 httpEncode64_3\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 96,
+    "end_line": 97,
+    "code": "   define cups_len_t size_t\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 97,
+    "end_line": 98,
+    "code": "   define cups_utf8_t char\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 98,
+    "end_line": 99,
+    "code": "   define IPP_NUM_CAST (size_t)\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 106,
+    "end_line": 107,
+    "code": " define LPRINT_TESTPAGE_MIMETYPE\t\"application/vnd.lprint-test\"\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 107,
+    "end_line": 108,
+    "code": " define LPRINT_TESTPAGE_HEADER\t\"T*E*S*T*P*A*G*E*\"\n\n#",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "preprocessor",
+    "start_line": 109,
+    "end_line": 112,
+    "code": " ifdef LPRINT_EXPERIMENTAL\n#    define LPRINT_BROTHER_PT_CBP_MIMETYPE \"application/vnd.brother-pt-cbp\"\n#    define LPRINT_CPCL_MIMETYPE\t\"application/vnd.zebra-cpcl\"\n#  endif /",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 110,
+    "end_line": 111,
+    "code": "   define LPRINT_BROTHER_PT_CBP_MIMETYPE \"application/vnd.brother-pt-cbp\"\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 111,
+    "end_line": 112,
+    "code": "   define LPRINT_CPCL_MIMETYPE\t\"application/vnd.zebra-cpcl\"\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 113,
+    "end_line": 114,
+    "code": " define LPRINT_EPL2_MIMETYPE\t\t\"application/vnd.eltron-epl\"\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 114,
+    "end_line": 115,
+    "code": " define LPRINT_SLP_MIMETYPE\t\t\"application/vnd.sii-slp\"\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 115,
+    "end_line": 116,
+    "code": " define LPRINT_TSPL_MIMETYPE\t\t\"application/vnd.tsc-tspl\"\n# ",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "macro",
+    "start_line": 116,
+    "end_line": 117,
+    "code": " define LPRINT_ZPL_MIMETYPE\t\t\"application/vnd.zebra-zpl\"\n\n\n",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "typedef",
+    "start_line": 124,
+    "end_line": 138,
+    "code": "pedef struct lprint_dither_s\t\t// Dithering state\n{\n  pappl_dither_t dither;\t\t// Dither matrix to use\n  unsigned char\t*input[4];\t\t// Input lines for dithering (only 3 are needed, 4 makes it easier for ring buffer)\n  unsigned\tin_width,\t\t// Width in pixels\n\t\tin_height,\t\t// Height in lines\n\t\tin_left,\t\t// Left (starting) pixel\n\t\tin_top,\t\t\t// Top-most pixel\n\t\tin_bottom;\t\t// Bottom-most pixel\n  unsigned char\tin_bpp,\t\t\t// Input bits per pixel (1 or 8)\n\t\tin_white;\t\t// Input white pixel value (0 or 255)\n  unsigned char\t*output,\t\t// Output bitmap\n\t\tout_white;\t\t// Output white pixel value (0 or 255)\n  unsigned\tout_width;\t\t// Output width in bytes\n} lprint_dither_t;\n\n",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "struct",
+    "name": "lprint_dither_s",
+    "hierarchy": "lprint_dither_s",
+    "start_line": 124,
+    "end_line": 138,
+    "code": "ruct lprint_dither_s\t\t// Dithering state\n{\n  pappl_dither_t dither;\t\t// Dither matrix to use\n  unsigned char\t*input[4];\t\t// Input lines for dithering (only 3 are needed, 4 makes it easier for ring buffer)\n  unsigned\tin_width,\t\t// Width in pixels\n\t\tin_height,\t\t// Height in lines\n\t\tin_left,\t\t// Left (starting) pixel\n\t\tin_top,\t\t\t// Top-most pixel\n\t\tin_bottom;\t\t// Bottom-most pixel\n  unsigned char\tin_bpp,\t\t\t// Input bits per pixel (1 or 8)\n\t\tin_white;\t\t// Input white pixel value (0 or 255)\n  unsigned char\t*output,\t\t// Output bitmap\n\t\tout_white;\t\t// Output white pixel value (0 or 255)\n  unsigned\tout_width;\t\t// Output width in bytes\n} l",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "typedef",
+    "start_line": 140,
+    "end_line": 144,
+    "code": "pedef struct lprint_cmedia_s\t\t// Custom label sizes (per-printer/source)\n{\n  char\t\tcustom_name[PAPPL_MAX_SOURCE][128];\n\t\t\t\t\t// Custom media size names\n} lprint_cmedia_t;\n\n",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "struct",
+    "name": "lprint_cmedia_s",
+    "hierarchy": "lprint_cmedia_s",
+    "start_line": 140,
+    "end_line": 144,
+    "code": "ruct lprint_cmedia_s\t\t// Custom label sizes (per-printer/source)\n{\n  char\t\tcustom_name[PAPPL_MAX_SOURCE][128];\n\t\t\t\t\t// Custom media size names\n} l",
+    "file": "data/codebase/lprint/lprint.h"
+  },
+  {
+    "type": "preprocessor",
+    "start_line": 164,
+    "end_line": 167,
+    "code": " ifdef LPRINT_EXPERIMENTAL\nextern bool\tlprintBrother(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *data, ipp_t **attrs, void *cbdata);\nextern bool\tlprintCPCL(pappl_system_t *system, const char *driver_name, const char *device_uri, const char *device_id, pappl_pr_driver_data_t *driver_data, ipp_t **driver_attrs, void *cbdata);\n#  endif /",
+    "file": "data/codebase/lprint/lprint.h"
+  }
+]

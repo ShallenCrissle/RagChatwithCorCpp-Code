@@ -1,0 +1,9 @@
+[
+  {
+    "type": "anonymous_initializer_block",
+    "start_line": 1,
+    "end_line": 22,
+    "code": "//\n// Seiko Instruments, Inc. driver table for LPrint, a Label Printer Application\n//\n// Copyright \u00a9\u00a02023 by Michael R Sweet.\n//\n// Licensed under Apache License v2.0.  See the file \"LICENSE\" for more\n// information.\n//\n\n// driver-name\t\t\tmake-and-model\tdevice-id\n{ \"sii_slp100_203dpi\",\t\t\"SII SLP100\",\t\"MFG:SII;CMD:SIISLP;MDL:SLP100;\", NULL },\n{ \"sii_slp200_203dpi\",\t\t\"SII SLP200\",\t\"MFG:SII;CMD:SIISLP;MDL:SLP200;\", NULL },\n{ \"sii_slp240_203dpi\",\t\t\"SII SLP240\",\t\"MFG:SII;CMD:SIISLP;MDL:SLP240;\", NULL },\n{ \"sii_slp410_203dpi\",\t\t\"SII SLP410\",\t\"MFG:SII;CMD:SIISLP;MDL:SLP410;\", NULL },\n{ \"sii_slp420_203dpi\",\t\t\"SII SLP420\",\t\"MFG:SII;CMD:SIISLP;MDL:SLP420;\", NULL },\n{ \"sii_slp430_203dpi\",\t\t\"SII SLP430\",\t\"MFG:SII;CMD:SIISLP;MDL:SLP430;\", NULL },\n{ \"sii_slp440_300dpi\",\t\t\"SII SLP440\",\t\"MFG:SII;CMD:SIISLP;MDL:SLP440;\", NULL },\n{ \"sii_slp450_300dpi\",\t\t\"SII SLP450\",\t\"MFG:SII;CMD:SIISLP;MDL:SLP450;\", NULL },\n{ \"sii_slp620_203dpi\",\t\t\"SII SLP620\",\t\"MFG:SII;CMD:SIISLP;MDL:SLP620;\", NULL },\n{ \"sii_slp650_300dpi\",\t\t\"SII SLP650\",\t\"MFG:SII;CMD:SIISLP;MDL:SLP650;\", NULL },\n{ \"sii_slp650se_300dpi\",\t\"SII SLP650SE\",\t\"MFG:SII;CMD:SIISLP;MDL:SLP650SE;\", NULL },\n",
+    "file": "data/codebase/lprint/lprint-sii.h"
+  }
+]

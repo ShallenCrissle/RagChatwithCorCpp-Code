@@ -1,0 +1,26 @@
+# Core LLM & Embedding
+sentence-transformers
+transformers
+torch
+chromadb
+
+# LLM APIs
+cohere
+google-generativeai
+
+# UI
+streamlit
+streamlit-option-menu
+
+# Utilities
+tqdm
+python-dotenv
+requests
+
+# Code Parsing
+tree-sitter==0.20.4
+tree_sitter_languages==1.10.2  # for C/C++ support
+clang==15.0.6.1                # from PyPI (requires libclang installed system-wide)
+
+# Compatibility / Core
+protobuf  # required for some LLM clients

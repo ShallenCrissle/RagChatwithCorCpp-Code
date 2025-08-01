@@ -1,0 +1,16 @@
+[
+  {
+    "type": "anonymous_initializer_block",
+    "start_line": 1,
+    "end_line": 50,
+    "code": "//\n// Experimental Brother driver table for LPrint, a Label Printer Application\n//\n// Copyright \u00a9\u00a02023-2025 by Michael R Sweet.\n//\n// Licensed under Apache License v2.0.  See the file \"LICENSE\" for more\n// information.\n//\n\n{ \"brother_pt-e550w\",\t\"Brother PT-E550W\",\n   \"MFG:Brother;CMD:PT-CBP;MDL:PT-E550W;\", NULL },\n//{ \"brother_pt-\",\t\"Brother PT-\",\n//  \"MFG:Brother;CMD:???;MDL:PT-;\", NULL },\n{ \"brother_ql-500\",\t\"Brother QL-500\",\n  \"MFG:Brother;CMD:PT-CBP;MDL:QL-500;\", NULL },\n{ \"brother_ql-550\",\t\"Brother QL-550\",\n  \"MFG:Brother;CMD:PT-CBP;MDL:QL-550;\", NULL },\n{ \"brother_ql-560\",\t\"Brother QL-560\",\n  \"MFG:Brother;CMD:PT-CBP;MDL:QL-560;\", NULL },\n{ \"brother_ql-570\",\t\"Brother QL-570\",\n  \"MFG:Brother;CMD:PT-CBP;MDL:QL-570;\", NULL },\n{ \"brother_ql-580n\",\t\"Brother QL-580N\",\n  \"MFG:Brother;CMD:PT-CBP;MDL:QL-580N;\", NULL },\n{ \"brother_ql-600\",\t\"Brother QL-600\",\n  \"MFG:Brother;CMD:PT-CBP;MDL:QL-600;\", NULL },\n{ \"brother_ql-650td\",\t\"Brother QL-650TD\",\n  \"MFG:Brother;CMD:PT-CBP;MDL:QL-650TD;\", NULL },\n{ \"brother_ql-700\",\t\"Brother QL-700\",\n  \"MFG:Brother;CMD:PT-CBP;MDL:QL-700;\", NULL },\n{ \"brother_ql-710w\",\t\"Brother QL-710W\",\n  \"MFG:Brother;CMD:PT-CBP;MDL:QL-710W;\", NULL },\n{ \"brother_ql-720nw\",\t\"Brother QL-720NW\",\n  \"MFG:Brother;CMD:PT-CBP;MDL:QL-720NW;\", NULL },\n{ \"brother_ql-800\",\t\"Brother QL-800\",\n  \"MFG:Brother;CMD:PT-CBP;MDL:QL-800;\", NULL },\n{ \"brother_ql-810w\",\t\"Brother QL-810W\",\n  \"MFG:Brother;CMD:PT-CBP;MDL:QL-810W;\", NULL },\n{ \"brother_ql-820nwb\",\t\"Brother QL-820NWB\",\n  \"MFG:Brother;CMD:PT-CBP;MDL:QL-820NWB;\", NULL },\n{ \"brother_ql-1050\",\t\"Brother QL-1050\",\n  \"MFG:Brother;CMD:PT-CBP;MDL:QL-1050;\", NULL },\n{ \"brother_ql-1060n\",\t\"Brother QL-1060N\",\n  \"MFG:Brother;CMD:PT-CBP;MDL:QL-1060N;\", NULL },\n{ \"brother_ql-1100\",\t\"Brother QL-1100\",\n  \"MFG:Brother;CMD:PT-CBP;MDL:QL-1100;\", NULL },\n{ \"brother_ql-1110nwb\",\t\"Brother QL-1110NWB\",\n  \"MFG:Brother;CMD:PT-CBP;MDL:QL-1110NWB;\", NULL },\n{ \"brother_ql-1115nwb\",\t\"Brother QL-1115NWB\",\n  \"MFG:Brother;CMD:PT-CBP;MDL:QL-1115NWB;\", NULL },\n",
+    "file": "data/codebase/lprint/lprint-brother.h"
+  },
+  {
+    "type": "anonymous_initializer_block",
+    "start_line": 13,
+    "end_line": 13,
+    "code": "  \"MFG:Brother;CMD:???;MDL:PT-;\", NULL },\n{",
+    "file": "data/codebase/lprint/lprint-brother.h"
+  }
+]

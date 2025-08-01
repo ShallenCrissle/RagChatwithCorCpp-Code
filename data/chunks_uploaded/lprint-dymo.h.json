@@ -1,0 +1,37 @@
+[
+  {
+    "type": "anonymous_initializer_block",
+    "start_line": 1,
+    "end_line": 62,
+    "code": "//\n// DYMO driver table for LPrint, a Label Printer Application\n//\n// Copyright \u00a9\u00a02019-2023 by Michael R Sweet.\n//\n// Licensed under Apache License v2.0.  See the file \"LICENSE\" for more\n// information.\n//\n\n{ \"dymo_lm-400\",             \"DYMO LabelMANAGER 400\",\n  \"MFG:DYMO;MDL:LabelMANAGER 400 ;\", NULL },\n{ \"dymo_lm-450\",             \"DYMO LabelMANAGER 450\",\n  \"MFG:DYMO;MDL:LabelMANAGER 450 ;\", NULL },\n{ \"dymo_lm-pc\",              \"DYMO LabelMANAGER PC\",\n  \"MFG:DYMO;MDL:LabelMANAGER PC ;\", NULL },\n{ \"dymo_lm-pc-ii\",           \"DYMO LabelMANAGER PC II\",\n  \"MFG:DYMO;MDL:LabelMANAGER PC II ;\", NULL },\n{ \"dymo_lm-pnp\",             \"DYMO LabelMANAGER PNP\",\n  \"MFG:DYMO;MDL:LabelMANAGER PNP ;\", NULL },\n{ \"dymo_lp-350\",             \"DYMO LabelPOINT 350\",\n  \"MFG:DYMO;MDL:LabelPOINT 350 ;\", NULL },\n{ \"dymo_lw-300\",             \"DYMO LabelWriter 300\",\n  \"MFG:DYMO;MDL:LabelWriter 300;\", NULL },\n{ \"dymo_lw-310\",             \"DYMO LabelWriter 310\",\n  \"MFG:DYMO;MDL:LabelWriter 310;\", NULL },\n{ \"dymo_lw-315\",             \"DYMO LabelWriter 315\",\n  \"MFG:DYMO;MDL:LabelWriter 315;\", NULL },\n{ \"dymo_lw-320\",             \"DYMO LabelWriter 320\",\n  \"MFG:DYMO;MDL:LabelWriter 320;\", NULL },\n{ \"dymo_lw-330\",             \"DYMO LabelWriter 330\",\n  \"MFG:DYMO;MDL:LabelWriter 330;\", NULL },\n{ \"dymo_lw-330-turbo\",       \"DYMO LabelWriter 330 Turbo\",\n  \"MFG:DYMO;MDL:LabelWriter 330 Turbo;\", NULL },\n{ \"dymo_lw-400\",             \"DYMO LabelWriter 400\",\n  \"MFG:DYMO;MDL:LabelWriter ;\", NULL },\n{ \"dymo_lw-400-turbo\",       \"DYMO LabelWriter 400 Turbo\",\n  \"MFG:DYMO;MDL:LabelWriter ;\", NULL },\n{ \"dymo_lw-450\",             \"DYMO LabelWriter 450\",\n  \"MFG:DYMO;MDL:LabelWriter 450;\", NULL },\n{ \"dymo_lw-450-duo-label\",   \"DYMO LabelWriter 450 DUO Label\",\n  \"MFG:DYMO;MDL:LabelWriter 450 DUO Label;\", NULL },\n{ \"dymo_lw-450-duo-tape\",    \"DYMO LabelWriter 450 DUO Tape\",\n  \"MFG:DYMO;MDL:LabelWriter 450 DUO Tape;\", NULL },\n{ \"dymo_lw-450-turbo\",       \"DYMO LabelWriter 450 Turbo\",\n  \"MFG:DYMO;MDL:LabelWriter 450 Turbo;\", NULL },\n{ \"dymo_lw-450-twin-turbo\",  \"DYMO LabelWriter 450 Twin Turbo\",\n  \"MFG:DYMO;MDL:LabelWriter 450 Twin Turbo;\", NULL },\n{ \"dymo_lw-4xl\",             \"DYMO LabelWriter 4XL\",\n  \"MFG:DYMO;MDL:LabelWriter 4XL;\", NULL },\n{ \"dymo_lw-duo-label\",       \"DYMO LabelWriter DUO Label\",\n  \"MFG:DYMO;MDL:LabelWriter DUO Label;\", NULL },\n{ \"dymo_lw-duo-tape\",        \"DYMO LabelWriter DUO Tape\",\n  \"MFG:DYMO;MDL:LabelWriter DUO Tape;\", NULL },\n{ \"dymo_lw-duo-tape-128\",    \"DYMO LabelWriter DUO Tape 128\",\n  \"MFG:DYMO;MDL:LabelWriter DUO Tape 128;\", NULL },\n{ \"dymo_lw-se450\",           \"DYMO LabelWriter SE450\",\n  \"MFG:DYMO;MDL:LabelWriter SE450;\", NULL },\n//{ \"dymo_lw-wireless\",        \"DYMO LabelWriter Wireless\", \"\", NULL },\n//{ \"dymo_lw-550\",             \"DYMO LabelWriter 550\", \"\", NULL },\n//{ \"dymo_lw-550-turbo\",       \"DYMO LabelWriter 550 Turbo\", \"\", NULL },\n//{ \"dymo_lw-5xl\",             \"DYMO LabelWriter 5XL\", \"\", NULL },\n",
+    "file": "data/codebase/lprint/lprint-dymo.h"
+  },
+  {
+    "type": "anonymous_initializer_block",
+    "start_line": 58,
+    "end_line": 58,
+    "code": "{ \"dymo_lw-wireless\",        \"DYMO LabelWriter Wireless\", \"\", NULL },\n/",
+    "file": "data/codebase/lprint/lprint-dymo.h"
+  },
+  {
+    "type": "anonymous_initializer_block",
+    "start_line": 59,
+    "end_line": 59,
+    "code": "{ \"dymo_lw-550\",             \"DYMO LabelWriter 550\", \"\", NULL },\n/",
+    "file": "data/codebase/lprint/lprint-dymo.h"
+  },
+  {
+    "type": "anonymous_initializer_block",
+    "start_line": 60,
+    "end_line": 60,
+    "code": "{ \"dymo_lw-550-turbo\",       \"DYMO LabelWriter 550 Turbo\", \"\", NULL },\n/",
+    "file": "data/codebase/lprint/lprint-dymo.h"
+  },
+  {
+    "type": "anonymous_initializer_block",
+    "start_line": 61,
+    "end_line": 61,
+    "code": "{ \"dymo_lw-5xl\",             \"DYMO LabelWriter 5XL\", \"\", NULL },\n",
+    "file": "data/codebase/lprint/lprint-dymo.h"
+  }
+]

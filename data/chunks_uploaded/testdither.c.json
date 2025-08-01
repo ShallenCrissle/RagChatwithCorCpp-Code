@@ -1,0 +1,526 @@
+[
+  {
+    "type": "struct_assignment",
+    "start_line": 1,
+    "end_line": 270,
+    "code": "//\n// Dither test program\n//\n// Usage:\n//\n//   ./testdither [--plain] INPUT.pwg > OUTPUT.pwg\n//\n// Copyright \u00a9 2023-2024 by Michael R Sweet\n//\n\n#include \"lprint.h\"\n#include <fcntl.h>\n#include <unistd.h>\n\n\n//\n// Local functions...\n//\n\nstatic void\twrite_line(lprint_dither_t *dither, unsigned y, cups_raster_t *out_ras, cups_page_header_t *out_header, unsigned char *out_line);\n\n\n//\n// 'main()' - Main entry for test program.\n//\n\nint\t\t\t\t\t// O - Exit status\nmain(int  argc,\t\t\t\t// I - Number of command-line arguments\n     char *argv[])\t\t\t// I - Command-line arguments\n{\n  int\t\t\tret = 0;\t// Exit status\n  bool\t\t\tplain = false;\t// Plain/original output\n  pappl_pr_options_t\toptions;\t// Print job options\n  unsigned\t\tpage,\t\t// Current page\n\t\t\ty;\t\t// Current line on page\n  const char\t\t*in_name;\t// Input filename\n  int\t\t\tin_file;\t// Input file\n  cups_raster_t\t\t*in_ras;\t// Input raster stream\n  cups_page_header_t\tin_header;\t// Input page header\n  unsigned char\t\t*in_line;\t// Input line\n  cups_raster_t\t\t*out_ras;\t// Output raster stream\n  cups_page_header_t\tout_header;\t// Output page header\n  unsigned char\t\t*out_line;\t// Output line\n  lprint_dither_t\tdither;\t\t// Dithering data\n  static const pappl_dither_t clustered =\n  {\t\t\t\t\t// Clustered-Dot Dither Matrix\n    {  96,  40,  48, 104, 140, 188, 196, 148,  97,  41,  49, 105, 141, 189, 197, 149 },\n    {  32,   0,   8,  56, 180, 236, 244, 204,  33,   1,   9,  57, 181, 237, 245, 205 },\n    {  88,  24,  16,  64, 172, 228, 252, 212,  89,  25,  17,  65, 173, 229, 253, 213 },\n    { 120,  80,  72, 112, 132, 164, 220, 156, 121,  81,  73, 113, 133, 165, 221, 157 },\n    { 136, 184, 192, 144, 100,  44,  52, 108, 137, 185, 193, 145, 101,  45,  53, 109 },\n    { 176, 232, 240, 200,  36,   4,  12,  60, 177, 233, 241, 201,  37,   5,  13,  61 },\n    { 168, 224, 248, 208,  92,  28,  20,  68, 169, 225, 249, 209,  93,  29,  21,  69 },\n    { 128, 160, 216, 152, 124,  84,  76, 116, 129, 161, 217, 153, 125,  85,  77, 117 },\n    {  98,  42,  50, 106, 142, 190, 198, 150,  99,  43,  51, 107, 143, 191, 199, 151 },\n    {  34,   2,  10,  58, 182, 238, 246, 206,  35,   3,  11,  59, 183, 239, 247, 207 },\n    {  90,  26,  18,  66, 174, 230, 254, 214,  91,  27,  19,  67, 175, 231, 254, 215 },\n    { 122,  82,  74, 114, 134, 166, 222, 158, 123,  83,  75, 115, 135, 167, 223, 159 },\n    { 138, 186, 194, 146, 102,  46,  54, 110, 139, 187, 195, 147, 103,  47,  55, 111 },\n    { 178, 234, 242, 202,  38,   6,  14,  62, 179, 235, 243, 203,  39,   7,  15,  63 },\n    { 170, 226, 250, 210,  94,  30,  22,  70, 171, 227, 251, 211,  95,  31,  23,  71 },\n    { 130, 162, 218, 154, 126,  86,  78, 118, 131, 163, 219, 155, 127,  87,  79, 119 }\n  };\n\n\n  // Check command-line\n  if (argc == 2 && argv[1][0] != '-')\n  {\n    in_name = argv[1];\n  }\n  else if (argc == 3 && !strcmp(argv[1], \"--plain\"))\n  {\n    plain   = true;\n    in_name = argv[2];\n  }\n  else\n  {\n    fputs(\"Usage: ./dithertest [--plain] INPUT.pwg >OUTPUT.pwg\\n\", stderr);\n    return (1);\n  }\n\n  // Open input raster file...\n  if ((in_file = open(in_name, O_RDONLY)) < 0)\n  {\n    perror(in_name);\n    return (1);\n  }\n\n  if ((in_ras = cupsRasterOpen(in_file, CUPS_RASTER_READ)) == NULL)\n  {\n    fprintf(stderr, \"%s: %s\\n\", in_name, cupsGetErrorString());\n    close(in_file);\n    return (1);\n  }\n\n  // Output output raster stream...\n  if ((out_ras = cupsRasterOpen(1, CUPS_RASTER_WRITE_PWG)) == NULL)\n  {\n    fprintf(stderr, \"stdout: %s\\n\", cupsGetErrorString());\n    close(in_file);\n    cupsRasterClose(in_ras);\n    return (1);\n  }\n\n  // Loop until we run out of pages...\n  memset(&options, 0, sizeof(options));\n  memcpy(&options.dither, clustered, sizeof(options.dither));\n\n  for (page = 1; cupsRasterReadHeader(in_ras, &in_header); page ++)\n  {\n    // Show page info...\n    fprintf(stderr, \"Page %u: %ux%ux%u\\n\", page, in_header.cupsWidth, in_header.cupsHeight, in_header.cupsBitsPerPixel);\n\n    // Build the output header and job options...\n    memcpy(&options.header, &in_header, sizeof(options.header));\n\n    memcpy(&out_header, &in_header, sizeof(out_header));\n    if (plain)\n    {\n      out_header.cupsColorOrder   = CUPS_ORDER_CHUNKED;\n      out_header.cupsColorSpace   = CUPS_CSPACE_K;\n      out_header.cupsBitsPerColor = 1;\n      out_header.cupsBitsPerPixel = 1;\n      out_header.cupsBytesPerLine = (out_header.cupsWidth + 7) / 8;\n      out_header.cupsNumColors    = 1;\n    }\n    else\n    {\n      out_header.cupsColorOrder   = CUPS_ORDER_CHUNKED;\n      out_header.cupsColorSpace   = CUPS_CSPACE_SRGB;\n      out_header.cupsBitsPerColor = 8;\n      out_header.cupsBitsPerPixel = 24;\n      out_header.cupsBytesPerLine = out_header.cupsWidth * 3;\n      out_header.cupsNumColors    = 3;\n    }\n\n    // Allocate memory\n    if (!lprintDitherAlloc(&dither, NULL, &options, CUPS_CSPACE_K, 1.0))\n    {\n      fputs(\"Unable to initialize dither buffer.\\n\", stderr);\n      ret = 1;\n      break;\n    }\n\n    in_line  = malloc(in_header.cupsBytesPerLine);\n    out_line = malloc(out_header.cupsBytesPerLine);\n\n    if (!in_line || !out_line)\n    {\n      perror(\"Unable to allocate memory for page\");\n      free(in_line);\n      free(out_line);\n      lprintDitherFree(&dither);\n      ret = 1;\n      break;\n    }\n\n    // Dither page...\n    cupsRasterWriteHeader(out_ras, &out_header);\n\n    for (y = 0; y < in_header.cupsHeight; y ++)\n    {\n      cupsRasterReadPixels(in_ras, in_line, in_header.cupsBytesPerLine);\n\n      if (lprintDitherLine(&dither, y, in_line))\n      {\n\tif (plain)\n\t  cupsRasterWritePixels(out_ras, dither.output, out_header.cupsBytesPerLine);\n\telse\n\t  write_line(&dither, y, out_ras, &out_header, out_line);\n      }\n    }\n\n    if (lprintDitherLine(&dither, y, NULL))\n    {\n      if (plain)\n        cupsRasterWritePixels(out_ras, dither.output, out_header.cupsBytesPerLine);\n      else\n\twrite_line(&dither, y, out_ras, &out_header, out_line);\n    }\n\n    // Free memory\n    lprintDitherFree(&dither);\n    free(in_line);\n    free(out_line);\n  }\n\n  // Cleanup and exit...\n  close(in_file);\n  cupsRasterClose(in_ras);\n  cupsRasterClose(out_ras);\n\n  return (ret);\n}\n\n\n//\n// 'write_line()' - Write a color-coded line showing how dithering is applied.\n//\n\n\nstatic void\nwrite_line(\n    lprint_dither_t    *dither,\t\t// Dither buffer\n    unsigned           y,\t\t// Current line\n    cups_raster_t      *out_ras,\t// Output raster stream\n    cups_page_header_t *out_header,\t// Output page header\n    unsigned char      *out_line)\t// Output line buffer\n{\n  unsigned\t\tcount;\t\t// Number of pixels left\n  unsigned char\t\t*out_ptr,\t// Pointer into output line\n\t\t\t*dptr,\t\t// Pointer into dither output\n\t\t\tdbit;\t\t// Bit in dither output\n  unsigned char\t\t*in_ptr;\t// Pointer into input line\n\n\n  // Provide a color-coded version of the dithered output, with blue showing\n  // repeated areas...\n  for (count = dither->in_width, out_ptr = out_line, dptr = dither->output, dbit = 128, in_ptr = dither->input[(y - 1) & 3]; count > 0; count --, in_ptr ++)\n  {\n    // Set the current output pixel color...\n    if (*dptr & dbit)\n    {\n      // Black or dark blue\n      if (*in_ptr < 255)\n      {\n\t// Dark yellow for gray that came out black\n\t*out_ptr++ = 79 - *in_ptr / 8;\n\t*out_ptr++ = 79 - *in_ptr / 8;\n\t*out_ptr++ = 31;\n      }\n      else\n      {\n        // Black\n\t*out_ptr++ = 0;\n\t*out_ptr++ = 0;\n        *out_ptr++ = 0;\n      }\n    }\n    else if (*in_ptr)\n    {\n      // Yellow for gray that came out white\n      *out_ptr++ = 255 - *in_ptr / 4;\n      *out_ptr++ = 255 - *in_ptr / 4;\n      *out_ptr++ = 127;\n    }\n    else\n    {\n      // White\n      *out_ptr++ = 255;\n      *out_ptr++ = 255;\n      *out_ptr++ = 255;\n    }\n\n    // Advance to the next bit in the dithered output...\n    if (dbit == 1)\n    {\n      dbit = 128;\n      dptr ++;\n    }\n    else\n    {\n      dbit /= 2;\n    }\n  }\n\n  // Write the output line and return...\n  cupsRasterWritePixels(out_ras, out_line, out_header->cupsBytesPerLine);\n}\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 1,
+    "end_line": 270,
+    "code": "//\n// Dither test program\n//\n// Usage:\n//\n//   ./testdither [--plain] INPUT.pwg > OUTPUT.pwg\n//\n// Copyright \u00a9 2023-2024 by Michael R Sweet\n//\n\n#include \"lprint.h\"\n#include <fcntl.h>\n#include <unistd.h>\n\n\n//\n// Local functions...\n//\n\nstatic void\twrite_line(lprint_dither_t *dither, unsigned y, cups_raster_t *out_ras, cups_page_header_t *out_header, unsigned char *out_line);\n\n\n//\n// 'main()' - Main entry for test program.\n//\n\nint\t\t\t\t\t// O - Exit status\nmain(int  argc,\t\t\t\t// I - Number of command-line arguments\n     char *argv[])\t\t\t// I - Command-line arguments\n{\n  int\t\t\tret = 0;\t// Exit status\n  bool\t\t\tplain = false;\t// Plain/original output\n  pappl_pr_options_t\toptions;\t// Print job options\n  unsigned\t\tpage,\t\t// Current page\n\t\t\ty;\t\t// Current line on page\n  const char\t\t*in_name;\t// Input filename\n  int\t\t\tin_file;\t// Input file\n  cups_raster_t\t\t*in_ras;\t// Input raster stream\n  cups_page_header_t\tin_header;\t// Input page header\n  unsigned char\t\t*in_line;\t// Input line\n  cups_raster_t\t\t*out_ras;\t// Output raster stream\n  cups_page_header_t\tout_header;\t// Output page header\n  unsigned char\t\t*out_line;\t// Output line\n  lprint_dither_t\tdither;\t\t// Dithering data\n  static const pappl_dither_t clustered =\n  {\t\t\t\t\t// Clustered-Dot Dither Matrix\n    {  96,  40,  48, 104, 140, 188, 196, 148,  97,  41,  49, 105, 141, 189, 197, 149 },\n    {  32,   0,   8,  56, 180, 236, 244, 204,  33,   1,   9,  57, 181, 237, 245, 205 },\n    {  88,  24,  16,  64, 172, 228, 252, 212,  89,  25,  17,  65, 173, 229, 253, 213 },\n    { 120,  80,  72, 112, 132, 164, 220, 156, 121,  81,  73, 113, 133, 165, 221, 157 },\n    { 136, 184, 192, 144, 100,  44,  52, 108, 137, 185, 193, 145, 101,  45,  53, 109 },\n    { 176, 232, 240, 200,  36,   4,  12,  60, 177, 233, 241, 201,  37,   5,  13,  61 },\n    { 168, 224, 248, 208,  92,  28,  20,  68, 169, 225, 249, 209,  93,  29,  21,  69 },\n    { 128, 160, 216, 152, 124,  84,  76, 116, 129, 161, 217, 153, 125,  85,  77, 117 },\n    {  98,  42,  50, 106, 142, 190, 198, 150,  99,  43,  51, 107, 143, 191, 199, 151 },\n    {  34,   2,  10,  58, 182, 238, 246, 206,  35,   3,  11,  59, 183, 239, 247, 207 },\n    {  90,  26,  18,  66, 174, 230, 254, 214,  91,  27,  19,  67, 175, 231, 254, 215 },\n    { 122,  82,  74, 114, 134, 166, 222, 158, 123,  83,  75, 115, 135, 167, 223, 159 },\n    { 138, 186, 194, 146, 102,  46,  54, 110, 139, 187, 195, 147, 103,  47,  55, 111 },\n    { 178, 234, 242, 202,  38,   6,  14,  62, 179, 235, 243, 203,  39,   7,  15,  63 },\n    { 170, 226, 250, 210,  94,  30,  22,  70, 171, 227, 251, 211,  95,  31,  23,  71 },\n    { 130, 162, 218, 154, 126,  86,  78, 118, 131, 163, 219, 155, 127,  87,  79, 119 }\n  };\n\n\n  // Check command-line\n  if (argc == 2 && argv[1][0] != '-')\n  {\n    in_name = argv[1];\n  }\n  else if (argc == 3 && !strcmp(argv[1], \"--plain\"))\n  {\n    plain   = true;\n    in_name = argv[2];\n  }\n  else\n  {\n    fputs(\"Usage: ./dithertest [--plain] INPUT.pwg >OUTPUT.pwg\\n\", stderr);\n    return (1);\n  }\n\n  // Open input raster file...\n  if ((in_file = open(in_name, O_RDONLY)) < 0)\n  {\n    perror(in_name);\n    return (1);\n  }\n\n  if ((in_ras = cupsRasterOpen(in_file, CUPS_RASTER_READ)) == NULL)\n  {\n    fprintf(stderr, \"%s: %s\\n\", in_name, cupsGetErrorString());\n    close(in_file);\n    return (1);\n  }\n\n  // Output output raster stream...\n  if ((out_ras = cupsRasterOpen(1, CUPS_RASTER_WRITE_PWG)) == NULL)\n  {\n    fprintf(stderr, \"stdout: %s\\n\", cupsGetErrorString());\n    close(in_file);\n    cupsRasterClose(in_ras);\n    return (1);\n  }\n\n  // Loop until we run out of pages...\n  memset(&options, 0, sizeof(options));\n  memcpy(&options.dither, clustered, sizeof(options.dither));\n\n  for (page = 1; cupsRasterReadHeader(in_ras, &in_header); page ++)\n  {\n    // Show page info...\n    fprintf(stderr, \"Page %u: %ux%ux%u\\n\", page, in_header.cupsWidth, in_header.cupsHeight, in_header.cupsBitsPerPixel);\n\n    // Build the output header and job options...\n    memcpy(&options.header, &in_header, sizeof(options.header));\n\n    memcpy(&out_header, &in_header, sizeof(out_header));\n    if (plain)\n    {\n      out_header.cupsColorOrder   = CUPS_ORDER_CHUNKED;\n      out_header.cupsColorSpace   = CUPS_CSPACE_K;\n      out_header.cupsBitsPerColor = 1;\n      out_header.cupsBitsPerPixel = 1;\n      out_header.cupsBytesPerLine = (out_header.cupsWidth + 7) / 8;\n      out_header.cupsNumColors    = 1;\n    }\n    else\n    {\n      out_header.cupsColorOrder   = CUPS_ORDER_CHUNKED;\n      out_header.cupsColorSpace   = CUPS_CSPACE_SRGB;\n      out_header.cupsBitsPerColor = 8;\n      out_header.cupsBitsPerPixel = 24;\n      out_header.cupsBytesPerLine = out_header.cupsWidth * 3;\n      out_header.cupsNumColors    = 3;\n    }\n\n    // Allocate memory\n    if (!lprintDitherAlloc(&dither, NULL, &options, CUPS_CSPACE_K, 1.0))\n    {\n      fputs(\"Unable to initialize dither buffer.\\n\", stderr);\n      ret = 1;\n      break;\n    }\n\n    in_line  = malloc(in_header.cupsBytesPerLine);\n    out_line = malloc(out_header.cupsBytesPerLine);\n\n    if (!in_line || !out_line)\n    {\n      perror(\"Unable to allocate memory for page\");\n      free(in_line);\n      free(out_line);\n      lprintDitherFree(&dither);\n      ret = 1;\n      break;\n    }\n\n    // Dither page...\n    cupsRasterWriteHeader(out_ras, &out_header);\n\n    for (y = 0; y < in_header.cupsHeight; y ++)\n    {\n      cupsRasterReadPixels(in_ras, in_line, in_header.cupsBytesPerLine);\n\n      if (lprintDitherLine(&dither, y, in_line))\n      {\n\tif (plain)\n\t  cupsRasterWritePixels(out_ras, dither.output, out_header.cupsBytesPerLine);\n\telse\n\t  write_line(&dither, y, out_ras, &out_header, out_line);\n      }\n    }\n\n    if (lprintDitherLine(&dither, y, NULL))\n    {\n      if (plain)\n        cupsRasterWritePixels(out_ras, dither.output, out_header.cupsBytesPerLine);\n      else\n\twrite_line(&dither, y, out_ras, &out_header, out_line);\n    }\n\n    // Free memory\n    lprintDitherFree(&dither);\n    free(in_line);\n    free(out_line);\n  }\n\n  // Cleanup and exit...\n  close(in_file);\n  cupsRasterClose(in_ras);\n  cupsRasterClose(out_ras);\n\n  return (ret);\n}\n\n\n//\n// 'write_line()' - Write a color-coded line showing how dithering is applied.\n//\n\n\nstatic void\nwrite_line(\n    lprint_dither_t    *dither,\t\t// Dither buffer\n    unsigned           y,\t\t// Current line\n    cups_raster_t      *out_ras,\t// Output raster stream\n    cups_page_header_t *out_header,\t// Output page header\n    unsigned char      *out_line)\t// Output line buffer\n{\n  unsigned\t\tcount;\t\t// Number of pixels left\n  unsigned char\t\t*out_ptr,\t// Pointer into output line\n\t\t\t*dptr,\t\t// Pointer into dither output\n\t\t\tdbit;\t\t// Bit in dither output\n  unsigned char\t\t*in_ptr;\t// Pointer into input line\n\n\n  // Provide a color-coded version of the dithered output, with blue showing\n  // repeated areas...\n  for (count = dither->in_width, out_ptr = out_line, dptr = dither->output, dbit = 128, in_ptr = dither->input[(y - 1) & 3]; count > 0; count --, in_ptr ++)\n  {\n    // Set the current output pixel color...\n    if (*dptr & dbit)\n    {\n      // Black or dark blue\n      if (*in_ptr < 255)\n      {\n\t// Dark yellow for gray that came out black\n\t*out_ptr++ = 79 - *in_ptr / 8;\n\t*out_ptr++ = 79 - *in_ptr / 8;\n\t*out_ptr++ = 31;\n      }\n      else\n      {\n        // Black\n\t*out_ptr++ = 0;\n\t*out_ptr++ = 0;\n        *out_ptr++ = 0;\n      }\n    }\n    else if (*in_ptr)\n    {\n      // Yellow for gray that came out white\n      *out_ptr++ = 255 - *in_ptr / 4;\n      *out_ptr++ = 255 - *in_ptr / 4;\n      *out_ptr++ = 127;\n    }\n    else\n    {\n      // White\n      *out_ptr++ = 255;\n      *out_ptr++ = 255;\n      *out_ptr++ = 255;\n    }\n\n    // Advance to the next bit in the dithered output...\n    if (dbit == 1)\n    {\n      dbit = 128;\n      dptr ++;\n    }\n    else\n    {\n      dbit /= 2;\n    }\n  }\n\n  // Write the output line and return...\n  cupsRasterWritePixels(out_ras, out_line, out_header->cupsBytesPerLine);\n}\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "static_const_char_pointer_array",
+    "start_line": 1,
+    "end_line": 270,
+    "code": "//\n// Dither test program\n//\n// Usage:\n//\n//   ./testdither [--plain] INPUT.pwg > OUTPUT.pwg\n//\n// Copyright \u00a9 2023-2024 by Michael R Sweet\n//\n\n#include \"lprint.h\"\n#include <fcntl.h>\n#include <unistd.h>\n\n\n//\n// Local functions...\n//\n\nstatic void\twrite_line(lprint_dither_t *dither, unsigned y, cups_raster_t *out_ras, cups_page_header_t *out_header, unsigned char *out_line);\n\n\n//\n// 'main()' - Main entry for test program.\n//\n\nint\t\t\t\t\t// O - Exit status\nmain(int  argc,\t\t\t\t// I - Number of command-line arguments\n     char *argv[])\t\t\t// I - Command-line arguments\n{\n  int\t\t\tret = 0;\t// Exit status\n  bool\t\t\tplain = false;\t// Plain/original output\n  pappl_pr_options_t\toptions;\t// Print job options\n  unsigned\t\tpage,\t\t// Current page\n\t\t\ty;\t\t// Current line on page\n  const char\t\t*in_name;\t// Input filename\n  int\t\t\tin_file;\t// Input file\n  cups_raster_t\t\t*in_ras;\t// Input raster stream\n  cups_page_header_t\tin_header;\t// Input page header\n  unsigned char\t\t*in_line;\t// Input line\n  cups_raster_t\t\t*out_ras;\t// Output raster stream\n  cups_page_header_t\tout_header;\t// Output page header\n  unsigned char\t\t*out_line;\t// Output line\n  lprint_dither_t\tdither;\t\t// Dithering data\n  static const pappl_dither_t clustered =\n  {\t\t\t\t\t// Clustered-Dot Dither Matrix\n    {  96,  40,  48, 104, 140, 188, 196, 148,  97,  41,  49, 105, 141, 189, 197, 149 },\n    {  32,   0,   8,  56, 180, 236, 244, 204,  33,   1,   9,  57, 181, 237, 245, 205 },\n    {  88,  24,  16,  64, 172, 228, 252, 212,  89,  25,  17,  65, 173, 229, 253, 213 },\n    { 120,  80,  72, 112, 132, 164, 220, 156, 121,  81,  73, 113, 133, 165, 221, 157 },\n    { 136, 184, 192, 144, 100,  44,  52, 108, 137, 185, 193, 145, 101,  45,  53, 109 },\n    { 176, 232, 240, 200,  36,   4,  12,  60, 177, 233, 241, 201,  37,   5,  13,  61 },\n    { 168, 224, 248, 208,  92,  28,  20,  68, 169, 225, 249, 209,  93,  29,  21,  69 },\n    { 128, 160, 216, 152, 124,  84,  76, 116, 129, 161, 217, 153, 125,  85,  77, 117 },\n    {  98,  42,  50, 106, 142, 190, 198, 150,  99,  43,  51, 107, 143, 191, 199, 151 },\n    {  34,   2,  10,  58, 182, 238, 246, 206,  35,   3,  11,  59, 183, 239, 247, 207 },\n    {  90,  26,  18,  66, 174, 230, 254, 214,  91,  27,  19,  67, 175, 231, 254, 215 },\n    { 122,  82,  74, 114, 134, 166, 222, 158, 123,  83,  75, 115, 135, 167, 223, 159 },\n    { 138, 186, 194, 146, 102,  46,  54, 110, 139, 187, 195, 147, 103,  47,  55, 111 },\n    { 178, 234, 242, 202,  38,   6,  14,  62, 179, 235, 243, 203,  39,   7,  15,  63 },\n    { 170, 226, 250, 210,  94,  30,  22,  70, 171, 227, 251, 211,  95,  31,  23,  71 },\n    { 130, 162, 218, 154, 126,  86,  78, 118, 131, 163, 219, 155, 127,  87,  79, 119 }\n  };\n\n\n  // Check command-line\n  if (argc == 2 && argv[1][0] != '-')\n  {\n    in_name = argv[1];\n  }\n  else if (argc == 3 && !strcmp(argv[1], \"--plain\"))\n  {\n    plain   = true;\n    in_name = argv[2];\n  }\n  else\n  {\n    fputs(\"Usage: ./dithertest [--plain] INPUT.pwg >OUTPUT.pwg\\n\", stderr);\n    return (1);\n  }\n\n  // Open input raster file...\n  if ((in_file = open(in_name, O_RDONLY)) < 0)\n  {\n    perror(in_name);\n    return (1);\n  }\n\n  if ((in_ras = cupsRasterOpen(in_file, CUPS_RASTER_READ)) == NULL)\n  {\n    fprintf(stderr, \"%s: %s\\n\", in_name, cupsGetErrorString());\n    close(in_file);\n    return (1);\n  }\n\n  // Output output raster stream...\n  if ((out_ras = cupsRasterOpen(1, CUPS_RASTER_WRITE_PWG)) == NULL)\n  {\n    fprintf(stderr, \"stdout: %s\\n\", cupsGetErrorString());\n    close(in_file);\n    cupsRasterClose(in_ras);\n    return (1);\n  }\n\n  // Loop until we run out of pages...\n  memset(&options, 0, sizeof(options));\n  memcpy(&options.dither, clustered, sizeof(options.dither));\n\n  for (page = 1; cupsRasterReadHeader(in_ras, &in_header); page ++)\n  {\n    // Show page info...\n    fprintf(stderr, \"Page %u: %ux%ux%u\\n\", page, in_header.cupsWidth, in_header.cupsHeight, in_header.cupsBitsPerPixel);\n\n    // Build the output header and job options...\n    memcpy(&options.header, &in_header, sizeof(options.header));\n\n    memcpy(&out_header, &in_header, sizeof(out_header));\n    if (plain)\n    {\n      out_header.cupsColorOrder   = CUPS_ORDER_CHUNKED;\n      out_header.cupsColorSpace   = CUPS_CSPACE_K;\n      out_header.cupsBitsPerColor = 1;\n      out_header.cupsBitsPerPixel = 1;\n      out_header.cupsBytesPerLine = (out_header.cupsWidth + 7) / 8;\n      out_header.cupsNumColors    = 1;\n    }\n    else\n    {\n      out_header.cupsColorOrder   = CUPS_ORDER_CHUNKED;\n      out_header.cupsColorSpace   = CUPS_CSPACE_SRGB;\n      out_header.cupsBitsPerColor = 8;\n      out_header.cupsBitsPerPixel = 24;\n      out_header.cupsBytesPerLine = out_header.cupsWidth * 3;\n      out_header.cupsNumColors    = 3;\n    }\n\n    // Allocate memory\n    if (!lprintDitherAlloc(&dither, NULL, &options, CUPS_CSPACE_K, 1.0))\n    {\n      fputs(\"Unable to initialize dither buffer.\\n\", stderr);\n      ret = 1;\n      break;\n    }\n\n    in_line  = malloc(in_header.cupsBytesPerLine);\n    out_line = malloc(out_header.cupsBytesPerLine);\n\n    if (!in_line || !out_line)\n    {\n      perror(\"Unable to allocate memory for page\");\n      free(in_line);\n      free(out_line);\n      lprintDitherFree(&dither);\n      ret = 1;\n      break;\n    }\n\n    // Dither page...\n    cupsRasterWriteHeader(out_ras, &out_header);\n\n    for (y = 0; y < in_header.cupsHeight; y ++)\n    {\n      cupsRasterReadPixels(in_ras, in_line, in_header.cupsBytesPerLine);\n\n      if (lprintDitherLine(&dither, y, in_line))\n      {\n\tif (plain)\n\t  cupsRasterWritePixels(out_ras, dither.output, out_header.cupsBytesPerLine);\n\telse\n\t  write_line(&dither, y, out_ras, &out_header, out_line);\n      }\n    }\n\n    if (lprintDitherLine(&dither, y, NULL))\n    {\n      if (plain)\n        cupsRasterWritePixels(out_ras, dither.output, out_header.cupsBytesPerLine);\n      else\n\twrite_line(&dither, y, out_ras, &out_header, out_line);\n    }\n\n    // Free memory\n    lprintDitherFree(&dither);\n    free(in_line);\n    free(out_line);\n  }\n\n  // Cleanup and exit...\n  close(in_file);\n  cupsRasterClose(in_ras);\n  cupsRasterClose(out_ras);\n\n  return (ret);\n}\n\n\n//\n// 'write_line()' - Write a color-coded line showing how dithering is applied.\n//\n\n\nstatic void\nwrite_line(\n    lprint_dither_t    *dither,\t\t// Dither buffer\n    unsigned           y,\t\t// Current line\n    cups_raster_t      *out_ras,\t// Output raster stream\n    cups_page_header_t *out_header,\t// Output page header\n    unsigned char      *out_line)\t// Output line buffer\n{\n  unsigned\t\tcount;\t\t// Number of pixels left\n  unsigned char\t\t*out_ptr,\t// Pointer into output line\n\t\t\t*dptr,\t\t// Pointer into dither output\n\t\t\tdbit;\t\t// Bit in dither output\n  unsigned char\t\t*in_ptr;\t// Pointer into input line\n\n\n  // Provide a color-coded version of the dithered output, with blue showing\n  // repeated areas...\n  for (count = dither->in_width, out_ptr = out_line, dptr = dither->output, dbit = 128, in_ptr = dither->input[(y - 1) & 3]; count > 0; count --, in_ptr ++)\n  {\n    // Set the current output pixel color...\n    if (*dptr & dbit)\n    {\n      // Black or dark blue\n      if (*in_ptr < 255)\n      {\n\t// Dark yellow for gray that came out black\n\t*out_ptr++ = 79 - *in_ptr / 8;\n\t*out_ptr++ = 79 - *in_ptr / 8;\n\t*out_ptr++ = 31;\n      }\n      else\n      {\n        // Black\n\t*out_ptr++ = 0;\n\t*out_ptr++ = 0;\n        *out_ptr++ = 0;\n      }\n    }\n    else if (*in_ptr)\n    {\n      // Yellow for gray that came out white\n      *out_ptr++ = 255 - *in_ptr / 4;\n      *out_ptr++ = 255 - *in_ptr / 4;\n      *out_ptr++ = 127;\n    }\n    else\n    {\n      // White\n      *out_ptr++ = 255;\n      *out_ptr++ = 255;\n      *out_ptr++ = 255;\n    }\n\n    // Advance to the next bit in the dithered output...\n    if (dbit == 1)\n    {\n      dbit = 128;\n      dptr ++;\n    }\n    else\n    {\n      dbit /= 2;\n    }\n  }\n\n  // Write the output line and return...\n  cupsRasterWritePixels(out_ras, out_line, out_header->cupsBytesPerLine);\n}\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "include",
+    "start_line": 11,
+    "end_line": 12,
+    "code": "include \"lprint.h\"\n#",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "include",
+    "start_line": 12,
+    "end_line": 13,
+    "code": "include <fcntl.h>\n#",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "include",
+    "start_line": 13,
+    "end_line": 14,
+    "code": "include <unistd.h>\n\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "function_prototype",
+    "start_line": 20,
+    "end_line": 20,
+    "code": "rite_line(lprint_dither_t *dither, unsigned y, cups_raster_t *out_ras, cups_page_header_t *out_header, unsigned char *out_line);",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "function",
+    "start_line": 27,
+    "end_line": 194,
+    "name": "main",
+    "parent": null,
+    "hierarchy": "main",
+    "code": "nt\t\t\t\t\t// O - Exit status\nmain(int  argc,\t\t\t\t// I - Number of command-line arguments\n     char *argv[])\t\t\t// I - Command-line arguments\n{\n  int\t\t\tret = 0;\t// Exit status\n  bool\t\t\tplain = false;\t// Plain/original output\n  pappl_pr_options_t\toptions;\t// Print job options\n  unsigned\t\tpage,\t\t// Current page\n\t\t\ty;\t\t// Current line on page\n  const char\t\t*in_name;\t// Input filename\n  int\t\t\tin_file;\t// Input file\n  cups_raster_t\t\t*in_ras;\t// Input raster stream\n  cups_page_header_t\tin_header;\t// Input page header\n  unsigned char\t\t*in_line;\t// Input line\n  cups_raster_t\t\t*out_ras;\t// Output raster stream\n  cups_page_header_t\tout_header;\t// Output page header\n  unsigned char\t\t*out_line;\t// Output line\n  lprint_dither_t\tdither;\t\t// Dithering data\n  static const pappl_dither_t clustered =\n  {\t\t\t\t\t// Clustered-Dot Dither Matrix\n    {  96,  40,  48, 104, 140, 188, 196, 148,  97,  41,  49, 105, 141, 189, 197, 149 },\n    {  32,   0,   8,  56, 180, 236, 244, 204,  33,   1,   9,  57, 181, 237, 245, 205 },\n    {  88,  24,  16,  64, 172, 228, 252, 212,  89,  25,  17,  65, 173, 229, 253, 213 },\n    { 120,  80,  72, 112, 132, 164, 220, 156, 121,  81,  73, 113, 133, 165, 221, 157 },\n    { 136, 184, 192, 144, 100,  44,  52, 108, 137, 185, 193, 145, 101,  45,  53, 109 },\n    { 176, 232, 240, 200,  36,   4,  12,  60, 177, 233, 241, 201,  37,   5,  13,  61 },\n    { 168, 224, 248, 208,  92,  28,  20,  68, 169, 225, 249, 209,  93,  29,  21,  69 },\n    { 128, 160, 216, 152, 124,  84,  76, 116, 129, 161, 217, 153, 125,  85,  77, 117 },\n    {  98,  42,  50, 106, 142, 190, 198, 150,  99,  43,  51, 107, 143, 191, 199, 151 },\n    {  34,   2,  10,  58, 182, 238, 246, 206,  35,   3,  11,  59, 183, 239, 247, 207 },\n    {  90,  26,  18,  66, 174, 230, 254, 214,  91,  27,  19,  67, 175, 231, 254, 215 },\n    { 122,  82,  74, 114, 134, 166, 222, 158, 123,  83,  75, 115, 135, 167, 223, 159 },\n    { 138, 186, 194, 146, 102,  46,  54, 110, 139, 187, 195, 147, 103,  47,  55, 111 },\n    { 178, 234, 242, 202,  38,   6,  14,  62, 179, 235, 243, 203,  39,   7,  15,  63 },\n    { 170, 226, 250, 210,  94,  30,  22,  70, 171, 227, 251, 211,  95,  31,  23,  71 },\n    { 130, 162, 218, 154, 126,  86,  78, 118, 131, 163, 219, 155, 127,  87,  79, 119 }\n  };\n\n\n  // Check command-line\n  if (argc == 2 && argv[1][0] != '-')\n  {\n    in_name = argv[1];\n  }\n  else if (argc == 3 && !strcmp(argv[1], \"--plain\"))\n  {\n    plain   = true;\n    in_name = argv[2];\n  }\n  else\n  {\n    fputs(\"Usage: ./dithertest [--plain] INPUT.pwg >OUTPUT.pwg\\n\", stderr);\n    return (1);\n  }\n\n  // Open input raster file...\n  if ((in_file = open(in_name, O_RDONLY)) < 0)\n  {\n    perror(in_name);\n    return (1);\n  }\n\n  if ((in_ras = cupsRasterOpen(in_file, CUPS_RASTER_READ)) == NULL)\n  {\n    fprintf(stderr, \"%s: %s\\n\", in_name, cupsGetErrorString());\n    close(in_file);\n    return (1);\n  }\n\n  // Output output raster stream...\n  if ((out_ras = cupsRasterOpen(1, CUPS_RASTER_WRITE_PWG)) == NULL)\n  {\n    fprintf(stderr, \"stdout: %s\\n\", cupsGetErrorString());\n    close(in_file);\n    cupsRasterClose(in_ras);\n    return (1);\n  }\n\n  // Loop until we run out of pages...\n  memset(&options, 0, sizeof(options));\n  memcpy(&options.dither, clustered, sizeof(options.dither));\n\n  for (page = 1; cupsRasterReadHeader(in_ras, &in_header); page ++)\n  {\n    // Show page info...\n    fprintf(stderr, \"Page %u: %ux%ux%u\\n\", page, in_header.cupsWidth, in_header.cupsHeight, in_header.cupsBitsPerPixel);\n\n    // Build the output header and job options...\n    memcpy(&options.header, &in_header, sizeof(options.header));\n\n    memcpy(&out_header, &in_header, sizeof(out_header));\n    if (plain)\n    {\n      out_header.cupsColorOrder   = CUPS_ORDER_CHUNKED;\n      out_header.cupsColorSpace   = CUPS_CSPACE_K;\n      out_header.cupsBitsPerColor = 1;\n      out_header.cupsBitsPerPixel = 1;\n      out_header.cupsBytesPerLine = (out_header.cupsWidth + 7) / 8;\n      out_header.cupsNumColors    = 1;\n    }\n    else\n    {\n      out_header.cupsColorOrder   = CUPS_ORDER_CHUNKED;\n      out_header.cupsColorSpace   = CUPS_CSPACE_SRGB;\n      out_header.cupsBitsPerColor = 8;\n      out_header.cupsBitsPerPixel = 24;\n      out_header.cupsBytesPerLine = out_header.cupsWidth * 3;\n      out_header.cupsNumColors    = 3;\n    }\n\n    // Allocate memory\n    if (!lprintDitherAlloc(&dither, NULL, &options, CUPS_CSPACE_K, 1.0))\n    {\n      fputs(\"Unable to initialize dither buffer.\\n\", stderr);\n      ret = 1;\n      break;\n    }\n\n    in_line  = malloc(in_header.cupsBytesPerLine);\n    out_line = malloc(out_header.cupsBytesPerLine);\n\n    if (!in_line || !out_line)\n    {\n      perror(\"Unable to allocate memory for page\");\n      free(in_line);\n      free(out_line);\n      lprintDitherFree(&dither);\n      ret = 1;\n      break;\n    }\n\n    // Dither page...\n    cupsRasterWriteHeader(out_ras, &out_header);\n\n    for (y = 0; y < in_header.cupsHeight; y ++)\n    {\n      cupsRasterReadPixels(in_ras, in_line, in_header.cupsBytesPerLine);\n\n      if (lprintDitherLine(&dither, y, in_line))\n      {\n\tif (plain)\n\t  cupsRasterWritePixels(out_ras, dither.output, out_header.cupsBytesPerLine);\n\telse\n\t  write_line(&dither, y, out_ras, &out_header, out_line);\n      }\n    }\n\n    if (lprintDitherLine(&dither, y, NULL))\n    {\n      if (plain)\n        cupsRasterWritePixels(out_ras, dither.output, out_header.cupsBytesPerLine);\n      else\n\twrite_line(&dither, y, out_ras, &out_header, out_line);\n    }\n\n    // Free memory\n    lprintDitherFree(&dither);\n    free(in_line);\n    free(out_line);\n  }\n\n  // Cleanup and exit...\n  close(in_file);\n  cupsRasterClose(in_ras);\n  cupsRasterClose(out_ras);\n\n  return (ret);\n}\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 27,
+    "end_line": 194,
+    "code": "nt\t\t\t\t\t// O - Exit status\nmain(int  argc,\t\t\t\t// I - Number of command-line arguments\n     char *argv[])\t\t\t// I - Command-line arguments\n{\n  int\t\t\tret = 0;\t// Exit status\n  bool\t\t\tplain = false;\t// Plain/original output\n  pappl_pr_options_t\toptions;\t// Print job options\n  unsigned\t\tpage,\t\t// Current page\n\t\t\ty;\t\t// Current line on page\n  const char\t\t*in_name;\t// Input filename\n  int\t\t\tin_file;\t// Input file\n  cups_raster_t\t\t*in_ras;\t// Input raster stream\n  cups_page_header_t\tin_header;\t// Input page header\n  unsigned char\t\t*in_line;\t// Input line\n  cups_raster_t\t\t*out_ras;\t// Output raster stream\n  cups_page_header_t\tout_header;\t// Output page header\n  unsigned char\t\t*out_line;\t// Output line\n  lprint_dither_t\tdither;\t\t// Dithering data\n  static const pappl_dither_t clustered =\n  {\t\t\t\t\t// Clustered-Dot Dither Matrix\n    {  96,  40,  48, 104, 140, 188, 196, 148,  97,  41,  49, 105, 141, 189, 197, 149 },\n    {  32,   0,   8,  56, 180, 236, 244, 204,  33,   1,   9,  57, 181, 237, 245, 205 },\n    {  88,  24,  16,  64, 172, 228, 252, 212,  89,  25,  17,  65, 173, 229, 253, 213 },\n    { 120,  80,  72, 112, 132, 164, 220, 156, 121,  81,  73, 113, 133, 165, 221, 157 },\n    { 136, 184, 192, 144, 100,  44,  52, 108, 137, 185, 193, 145, 101,  45,  53, 109 },\n    { 176, 232, 240, 200,  36,   4,  12,  60, 177, 233, 241, 201,  37,   5,  13,  61 },\n    { 168, 224, 248, 208,  92,  28,  20,  68, 169, 225, 249, 209,  93,  29,  21,  69 },\n    { 128, 160, 216, 152, 124,  84,  76, 116, 129, 161, 217, 153, 125,  85,  77, 117 },\n    {  98,  42,  50, 106, 142, 190, 198, 150,  99,  43,  51, 107, 143, 191, 199, 151 },\n    {  34,   2,  10,  58, 182, 238, 246, 206,  35,   3,  11,  59, 183, 239, 247, 207 },\n    {  90,  26,  18,  66, 174, 230, 254, 214,  91,  27,  19,  67, 175, 231, 254, 215 },\n    { 122,  82,  74, 114, 134, 166, 222, 158, 123,  83,  75, 115, 135, 167, 223, 159 },\n    { 138, 186, 194, 146, 102,  46,  54, 110, 139, 187, 195, 147, 103,  47,  55, 111 },\n    { 178, 234, 242, 202,  38,   6,  14,  62, 179, 235, 243, 203,  39,   7,  15,  63 },\n    { 170, 226, 250, 210,  94,  30,  22,  70, 171, 227, 251, 211,  95,  31,  23,  71 },\n    { 130, 162, 218, 154, 126,  86,  78, 118, 131, 163, 219, 155, 127,  87,  79, 119 }\n  };\n\n\n  // Check command-line\n  if (argc == 2 && argv[1][0] != '-')\n  {\n    in_name = argv[1];\n  }\n  else if (argc == 3 && !strcmp(argv[1], \"--plain\"))\n  {\n    plain   = true;\n    in_name = argv[2];\n  }\n  else\n  {\n    fputs(\"Usage: ./dithertest [--plain] INPUT.pwg >OUTPUT.pwg\\n\", stderr);\n    return (1);\n  }\n\n  // Open input raster file...\n  if ((in_file = open(in_name, O_RDONLY)) < 0)\n  {\n    perror(in_name);\n    return (1);\n  }\n\n  if ((in_ras = cupsRasterOpen(in_file, CUPS_RASTER_READ)) == NULL)\n  {\n    fprintf(stderr, \"%s: %s\\n\", in_name, cupsGetErrorString());\n    close(in_file);\n    return (1);\n  }\n\n  // Output output raster stream...\n  if ((out_ras = cupsRasterOpen(1, CUPS_RASTER_WRITE_PWG)) == NULL)\n  {\n    fprintf(stderr, \"stdout: %s\\n\", cupsGetErrorString());\n    close(in_file);\n    cupsRasterClose(in_ras);\n    return (1);\n  }\n\n  // Loop until we run out of pages...\n  memset(&options, 0, sizeof(options));\n  memcpy(&options.dither, clustered, sizeof(options.dither));\n\n  for (page = 1; cupsRasterReadHeader(in_ras, &in_header); page ++)\n  {\n    // Show page info...\n    fprintf(stderr, \"Page %u: %ux%ux%u\\n\", page, in_header.cupsWidth, in_header.cupsHeight, in_header.cupsBitsPerPixel);\n\n    // Build the output header and job options...\n    memcpy(&options.header, &in_header, sizeof(options.header));\n\n    memcpy(&out_header, &in_header, sizeof(out_header));\n    if (plain)\n    {\n      out_header.cupsColorOrder   = CUPS_ORDER_CHUNKED;\n      out_header.cupsColorSpace   = CUPS_CSPACE_K;\n      out_header.cupsBitsPerColor = 1;\n      out_header.cupsBitsPerPixel = 1;\n      out_header.cupsBytesPerLine = (out_header.cupsWidth + 7) / 8;\n      out_header.cupsNumColors    = 1;\n    }\n    else\n    {\n      out_header.cupsColorOrder   = CUPS_ORDER_CHUNKED;\n      out_header.cupsColorSpace   = CUPS_CSPACE_SRGB;\n      out_header.cupsBitsPerColor = 8;\n      out_header.cupsBitsPerPixel = 24;\n      out_header.cupsBytesPerLine = out_header.cupsWidth * 3;\n      out_header.cupsNumColors    = 3;\n    }\n\n    // Allocate memory\n    if (!lprintDitherAlloc(&dither, NULL, &options, CUPS_CSPACE_K, 1.0))\n    {\n      fputs(\"Unable to initialize dither buffer.\\n\", stderr);\n      ret = 1;\n      break;\n    }\n\n    in_line  = malloc(in_header.cupsBytesPerLine);\n    out_line = malloc(out_header.cupsBytesPerLine);\n\n    if (!in_line || !out_line)\n    {\n      perror(\"Unable to allocate memory for page\");\n      free(in_line);\n      free(out_line);\n      lprintDitherFree(&dither);\n      ret = 1;\n      break;\n    }\n\n    // Dither page...\n    cupsRasterWriteHeader(out_ras, &out_header);\n\n    for (y = 0; y < in_header.cupsHeight; y ++)\n    {\n      cupsRasterReadPixels(in_ras, in_line, in_header.cupsBytesPerLine);\n\n      if (lprintDitherLine(&dither, y, in_line))\n      {\n\tif (plain)\n\t  cupsRasterWritePixels(out_ras, dither.output, out_header.cupsBytesPerLine);\n\telse\n\t  write_line(&dither, y, out_ras, &out_header, out_line);\n      }\n    }\n\n    if (lprintDitherLine(&dither, y, NULL))\n    {\n      if (plain)\n        cupsRasterWritePixels(out_ras, dither.output, out_header.cupsBytesPerLine);\n      else\n\twrite_line(&dither, y, out_ras, &out_header, out_line);\n    }\n\n    // Free memory\n    lprintDitherFree(&dither);\n    free(in_line);\n    free(out_line);\n  }\n\n  // Cleanup and exit...\n  close(in_file);\n  cupsRasterClose(in_ras);\n  cupsRasterClose(out_ras);\n\n  return (ret);\n}\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "static_const_char_pointer_array",
+    "start_line": 27,
+    "end_line": 194,
+    "code": "nt\t\t\t\t\t// O - Exit status\nmain(int  argc,\t\t\t\t// I - Number of command-line arguments\n     char *argv[])\t\t\t// I - Command-line arguments\n{\n  int\t\t\tret = 0;\t// Exit status\n  bool\t\t\tplain = false;\t// Plain/original output\n  pappl_pr_options_t\toptions;\t// Print job options\n  unsigned\t\tpage,\t\t// Current page\n\t\t\ty;\t\t// Current line on page\n  const char\t\t*in_name;\t// Input filename\n  int\t\t\tin_file;\t// Input file\n  cups_raster_t\t\t*in_ras;\t// Input raster stream\n  cups_page_header_t\tin_header;\t// Input page header\n  unsigned char\t\t*in_line;\t// Input line\n  cups_raster_t\t\t*out_ras;\t// Output raster stream\n  cups_page_header_t\tout_header;\t// Output page header\n  unsigned char\t\t*out_line;\t// Output line\n  lprint_dither_t\tdither;\t\t// Dithering data\n  static const pappl_dither_t clustered =\n  {\t\t\t\t\t// Clustered-Dot Dither Matrix\n    {  96,  40,  48, 104, 140, 188, 196, 148,  97,  41,  49, 105, 141, 189, 197, 149 },\n    {  32,   0,   8,  56, 180, 236, 244, 204,  33,   1,   9,  57, 181, 237, 245, 205 },\n    {  88,  24,  16,  64, 172, 228, 252, 212,  89,  25,  17,  65, 173, 229, 253, 213 },\n    { 120,  80,  72, 112, 132, 164, 220, 156, 121,  81,  73, 113, 133, 165, 221, 157 },\n    { 136, 184, 192, 144, 100,  44,  52, 108, 137, 185, 193, 145, 101,  45,  53, 109 },\n    { 176, 232, 240, 200,  36,   4,  12,  60, 177, 233, 241, 201,  37,   5,  13,  61 },\n    { 168, 224, 248, 208,  92,  28,  20,  68, 169, 225, 249, 209,  93,  29,  21,  69 },\n    { 128, 160, 216, 152, 124,  84,  76, 116, 129, 161, 217, 153, 125,  85,  77, 117 },\n    {  98,  42,  50, 106, 142, 190, 198, 150,  99,  43,  51, 107, 143, 191, 199, 151 },\n    {  34,   2,  10,  58, 182, 238, 246, 206,  35,   3,  11,  59, 183, 239, 247, 207 },\n    {  90,  26,  18,  66, 174, 230, 254, 214,  91,  27,  19,  67, 175, 231, 254, 215 },\n    { 122,  82,  74, 114, 134, 166, 222, 158, 123,  83,  75, 115, 135, 167, 223, 159 },\n    { 138, 186, 194, 146, 102,  46,  54, 110, 139, 187, 195, 147, 103,  47,  55, 111 },\n    { 178, 234, 242, 202,  38,   6,  14,  62, 179, 235, 243, 203,  39,   7,  15,  63 },\n    { 170, 226, 250, 210,  94,  30,  22,  70, 171, 227, 251, 211,  95,  31,  23,  71 },\n    { 130, 162, 218, 154, 126,  86,  78, 118, 131, 163, 219, 155, 127,  87,  79, 119 }\n  };\n\n\n  // Check command-line\n  if (argc == 2 && argv[1][0] != '-')\n  {\n    in_name = argv[1];\n  }\n  else if (argc == 3 && !strcmp(argv[1], \"--plain\"))\n  {\n    plain   = true;\n    in_name = argv[2];\n  }\n  else\n  {\n    fputs(\"Usage: ./dithertest [--plain] INPUT.pwg >OUTPUT.pwg\\n\", stderr);\n    return (1);\n  }\n\n  // Open input raster file...\n  if ((in_file = open(in_name, O_RDONLY)) < 0)\n  {\n    perror(in_name);\n    return (1);\n  }\n\n  if ((in_ras = cupsRasterOpen(in_file, CUPS_RASTER_READ)) == NULL)\n  {\n    fprintf(stderr, \"%s: %s\\n\", in_name, cupsGetErrorString());\n    close(in_file);\n    return (1);\n  }\n\n  // Output output raster stream...\n  if ((out_ras = cupsRasterOpen(1, CUPS_RASTER_WRITE_PWG)) == NULL)\n  {\n    fprintf(stderr, \"stdout: %s\\n\", cupsGetErrorString());\n    close(in_file);\n    cupsRasterClose(in_ras);\n    return (1);\n  }\n\n  // Loop until we run out of pages...\n  memset(&options, 0, sizeof(options));\n  memcpy(&options.dither, clustered, sizeof(options.dither));\n\n  for (page = 1; cupsRasterReadHeader(in_ras, &in_header); page ++)\n  {\n    // Show page info...\n    fprintf(stderr, \"Page %u: %ux%ux%u\\n\", page, in_header.cupsWidth, in_header.cupsHeight, in_header.cupsBitsPerPixel);\n\n    // Build the output header and job options...\n    memcpy(&options.header, &in_header, sizeof(options.header));\n\n    memcpy(&out_header, &in_header, sizeof(out_header));\n    if (plain)\n    {\n      out_header.cupsColorOrder   = CUPS_ORDER_CHUNKED;\n      out_header.cupsColorSpace   = CUPS_CSPACE_K;\n      out_header.cupsBitsPerColor = 1;\n      out_header.cupsBitsPerPixel = 1;\n      out_header.cupsBytesPerLine = (out_header.cupsWidth + 7) / 8;\n      out_header.cupsNumColors    = 1;\n    }\n    else\n    {\n      out_header.cupsColorOrder   = CUPS_ORDER_CHUNKED;\n      out_header.cupsColorSpace   = CUPS_CSPACE_SRGB;\n      out_header.cupsBitsPerColor = 8;\n      out_header.cupsBitsPerPixel = 24;\n      out_header.cupsBytesPerLine = out_header.cupsWidth * 3;\n      out_header.cupsNumColors    = 3;\n    }\n\n    // Allocate memory\n    if (!lprintDitherAlloc(&dither, NULL, &options, CUPS_CSPACE_K, 1.0))\n    {\n      fputs(\"Unable to initialize dither buffer.\\n\", stderr);\n      ret = 1;\n      break;\n    }\n\n    in_line  = malloc(in_header.cupsBytesPerLine);\n    out_line = malloc(out_header.cupsBytesPerLine);\n\n    if (!in_line || !out_line)\n    {\n      perror(\"Unable to allocate memory for page\");\n      free(in_line);\n      free(out_line);\n      lprintDitherFree(&dither);\n      ret = 1;\n      break;\n    }\n\n    // Dither page...\n    cupsRasterWriteHeader(out_ras, &out_header);\n\n    for (y = 0; y < in_header.cupsHeight; y ++)\n    {\n      cupsRasterReadPixels(in_ras, in_line, in_header.cupsBytesPerLine);\n\n      if (lprintDitherLine(&dither, y, in_line))\n      {\n\tif (plain)\n\t  cupsRasterWritePixels(out_ras, dither.output, out_header.cupsBytesPerLine);\n\telse\n\t  write_line(&dither, y, out_ras, &out_header, out_line);\n      }\n    }\n\n    if (lprintDitherLine(&dither, y, NULL))\n    {\n      if (plain)\n        cupsRasterWritePixels(out_ras, dither.output, out_header.cupsBytesPerLine);\n      else\n\twrite_line(&dither, y, out_ras, &out_header, out_line);\n    }\n\n    // Free memory\n    lprintDitherFree(&dither);\n    free(in_line);\n    free(out_line);\n  }\n\n  // Cleanup and exit...\n  close(in_file);\n  cupsRasterClose(in_ras);\n  cupsRasterClose(out_ras);\n\n  return (ret);\n}\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 30,
+    "end_line": 194,
+    "code": "\n  int\t\t\tret = 0;\t// Exit status\n  bool\t\t\tplain = false;\t// Plain/original output\n  pappl_pr_options_t\toptions;\t// Print job options\n  unsigned\t\tpage,\t\t// Current page\n\t\t\ty;\t\t// Current line on page\n  const char\t\t*in_name;\t// Input filename\n  int\t\t\tin_file;\t// Input file\n  cups_raster_t\t\t*in_ras;\t// Input raster stream\n  cups_page_header_t\tin_header;\t// Input page header\n  unsigned char\t\t*in_line;\t// Input line\n  cups_raster_t\t\t*out_ras;\t// Output raster stream\n  cups_page_header_t\tout_header;\t// Output page header\n  unsigned char\t\t*out_line;\t// Output line\n  lprint_dither_t\tdither;\t\t// Dithering data\n  static const pappl_dither_t clustered =\n  {\t\t\t\t\t// Clustered-Dot Dither Matrix\n    {  96,  40,  48, 104, 140, 188, 196, 148,  97,  41,  49, 105, 141, 189, 197, 149 },\n    {  32,   0,   8,  56, 180, 236, 244, 204,  33,   1,   9,  57, 181, 237, 245, 205 },\n    {  88,  24,  16,  64, 172, 228, 252, 212,  89,  25,  17,  65, 173, 229, 253, 213 },\n    { 120,  80,  72, 112, 132, 164, 220, 156, 121,  81,  73, 113, 133, 165, 221, 157 },\n    { 136, 184, 192, 144, 100,  44,  52, 108, 137, 185, 193, 145, 101,  45,  53, 109 },\n    { 176, 232, 240, 200,  36,   4,  12,  60, 177, 233, 241, 201,  37,   5,  13,  61 },\n    { 168, 224, 248, 208,  92,  28,  20,  68, 169, 225, 249, 209,  93,  29,  21,  69 },\n    { 128, 160, 216, 152, 124,  84,  76, 116, 129, 161, 217, 153, 125,  85,  77, 117 },\n    {  98,  42,  50, 106, 142, 190, 198, 150,  99,  43,  51, 107, 143, 191, 199, 151 },\n    {  34,   2,  10,  58, 182, 238, 246, 206,  35,   3,  11,  59, 183, 239, 247, 207 },\n    {  90,  26,  18,  66, 174, 230, 254, 214,  91,  27,  19,  67, 175, 231, 254, 215 },\n    { 122,  82,  74, 114, 134, 166, 222, 158, 123,  83,  75, 115, 135, 167, 223, 159 },\n    { 138, 186, 194, 146, 102,  46,  54, 110, 139, 187, 195, 147, 103,  47,  55, 111 },\n    { 178, 234, 242, 202,  38,   6,  14,  62, 179, 235, 243, 203,  39,   7,  15,  63 },\n    { 170, 226, 250, 210,  94,  30,  22,  70, 171, 227, 251, 211,  95,  31,  23,  71 },\n    { 130, 162, 218, 154, 126,  86,  78, 118, 131, 163, 219, 155, 127,  87,  79, 119 }\n  };\n\n\n  // Check command-line\n  if (argc == 2 && argv[1][0] != '-')\n  {\n    in_name = argv[1];\n  }\n  else if (argc == 3 && !strcmp(argv[1], \"--plain\"))\n  {\n    plain   = true;\n    in_name = argv[2];\n  }\n  else\n  {\n    fputs(\"Usage: ./dithertest [--plain] INPUT.pwg >OUTPUT.pwg\\n\", stderr);\n    return (1);\n  }\n\n  // Open input raster file...\n  if ((in_file = open(in_name, O_RDONLY)) < 0)\n  {\n    perror(in_name);\n    return (1);\n  }\n\n  if ((in_ras = cupsRasterOpen(in_file, CUPS_RASTER_READ)) == NULL)\n  {\n    fprintf(stderr, \"%s: %s\\n\", in_name, cupsGetErrorString());\n    close(in_file);\n    return (1);\n  }\n\n  // Output output raster stream...\n  if ((out_ras = cupsRasterOpen(1, CUPS_RASTER_WRITE_PWG)) == NULL)\n  {\n    fprintf(stderr, \"stdout: %s\\n\", cupsGetErrorString());\n    close(in_file);\n    cupsRasterClose(in_ras);\n    return (1);\n  }\n\n  // Loop until we run out of pages...\n  memset(&options, 0, sizeof(options));\n  memcpy(&options.dither, clustered, sizeof(options.dither));\n\n  for (page = 1; cupsRasterReadHeader(in_ras, &in_header); page ++)\n  {\n    // Show page info...\n    fprintf(stderr, \"Page %u: %ux%ux%u\\n\", page, in_header.cupsWidth, in_header.cupsHeight, in_header.cupsBitsPerPixel);\n\n    // Build the output header and job options...\n    memcpy(&options.header, &in_header, sizeof(options.header));\n\n    memcpy(&out_header, &in_header, sizeof(out_header));\n    if (plain)\n    {\n      out_header.cupsColorOrder   = CUPS_ORDER_CHUNKED;\n      out_header.cupsColorSpace   = CUPS_CSPACE_K;\n      out_header.cupsBitsPerColor = 1;\n      out_header.cupsBitsPerPixel = 1;\n      out_header.cupsBytesPerLine = (out_header.cupsWidth + 7) / 8;\n      out_header.cupsNumColors    = 1;\n    }\n    else\n    {\n      out_header.cupsColorOrder   = CUPS_ORDER_CHUNKED;\n      out_header.cupsColorSpace   = CUPS_CSPACE_SRGB;\n      out_header.cupsBitsPerColor = 8;\n      out_header.cupsBitsPerPixel = 24;\n      out_header.cupsBytesPerLine = out_header.cupsWidth * 3;\n      out_header.cupsNumColors    = 3;\n    }\n\n    // Allocate memory\n    if (!lprintDitherAlloc(&dither, NULL, &options, CUPS_CSPACE_K, 1.0))\n    {\n      fputs(\"Unable to initialize dither buffer.\\n\", stderr);\n      ret = 1;\n      break;\n    }\n\n    in_line  = malloc(in_header.cupsBytesPerLine);\n    out_line = malloc(out_header.cupsBytesPerLine);\n\n    if (!in_line || !out_line)\n    {\n      perror(\"Unable to allocate memory for page\");\n      free(in_line);\n      free(out_line);\n      lprintDitherFree(&dither);\n      ret = 1;\n      break;\n    }\n\n    // Dither page...\n    cupsRasterWriteHeader(out_ras, &out_header);\n\n    for (y = 0; y < in_header.cupsHeight; y ++)\n    {\n      cupsRasterReadPixels(in_ras, in_line, in_header.cupsBytesPerLine);\n\n      if (lprintDitherLine(&dither, y, in_line))\n      {\n\tif (plain)\n\t  cupsRasterWritePixels(out_ras, dither.output, out_header.cupsBytesPerLine);\n\telse\n\t  write_line(&dither, y, out_ras, &out_header, out_line);\n      }\n    }\n\n    if (lprintDitherLine(&dither, y, NULL))\n    {\n      if (plain)\n        cupsRasterWritePixels(out_ras, dither.output, out_header.cupsBytesPerLine);\n      else\n\twrite_line(&dither, y, out_ras, &out_header, out_line);\n    }\n\n    // Free memory\n    lprintDitherFree(&dither);\n    free(in_line);\n    free(out_line);\n  }\n\n  // Cleanup and exit...\n  close(in_file);\n  cupsRasterClose(in_ras);\n  cupsRasterClose(out_ras);\n\n  return (ret);\n}\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "static_const_char_pointer_array",
+    "start_line": 30,
+    "end_line": 194,
+    "code": "\n  int\t\t\tret = 0;\t// Exit status\n  bool\t\t\tplain = false;\t// Plain/original output\n  pappl_pr_options_t\toptions;\t// Print job options\n  unsigned\t\tpage,\t\t// Current page\n\t\t\ty;\t\t// Current line on page\n  const char\t\t*in_name;\t// Input filename\n  int\t\t\tin_file;\t// Input file\n  cups_raster_t\t\t*in_ras;\t// Input raster stream\n  cups_page_header_t\tin_header;\t// Input page header\n  unsigned char\t\t*in_line;\t// Input line\n  cups_raster_t\t\t*out_ras;\t// Output raster stream\n  cups_page_header_t\tout_header;\t// Output page header\n  unsigned char\t\t*out_line;\t// Output line\n  lprint_dither_t\tdither;\t\t// Dithering data\n  static const pappl_dither_t clustered =\n  {\t\t\t\t\t// Clustered-Dot Dither Matrix\n    {  96,  40,  48, 104, 140, 188, 196, 148,  97,  41,  49, 105, 141, 189, 197, 149 },\n    {  32,   0,   8,  56, 180, 236, 244, 204,  33,   1,   9,  57, 181, 237, 245, 205 },\n    {  88,  24,  16,  64, 172, 228, 252, 212,  89,  25,  17,  65, 173, 229, 253, 213 },\n    { 120,  80,  72, 112, 132, 164, 220, 156, 121,  81,  73, 113, 133, 165, 221, 157 },\n    { 136, 184, 192, 144, 100,  44,  52, 108, 137, 185, 193, 145, 101,  45,  53, 109 },\n    { 176, 232, 240, 200,  36,   4,  12,  60, 177, 233, 241, 201,  37,   5,  13,  61 },\n    { 168, 224, 248, 208,  92,  28,  20,  68, 169, 225, 249, 209,  93,  29,  21,  69 },\n    { 128, 160, 216, 152, 124,  84,  76, 116, 129, 161, 217, 153, 125,  85,  77, 117 },\n    {  98,  42,  50, 106, 142, 190, 198, 150,  99,  43,  51, 107, 143, 191, 199, 151 },\n    {  34,   2,  10,  58, 182, 238, 246, 206,  35,   3,  11,  59, 183, 239, 247, 207 },\n    {  90,  26,  18,  66, 174, 230, 254, 214,  91,  27,  19,  67, 175, 231, 254, 215 },\n    { 122,  82,  74, 114, 134, 166, 222, 158, 123,  83,  75, 115, 135, 167, 223, 159 },\n    { 138, 186, 194, 146, 102,  46,  54, 110, 139, 187, 195, 147, 103,  47,  55, 111 },\n    { 178, 234, 242, 202,  38,   6,  14,  62, 179, 235, 243, 203,  39,   7,  15,  63 },\n    { 170, 226, 250, 210,  94,  30,  22,  70, 171, 227, 251, 211,  95,  31,  23,  71 },\n    { 130, 162, 218, 154, 126,  86,  78, 118, 131, 163, 219, 155, 127,  87,  79, 119 }\n  };\n\n\n  // Check command-line\n  if (argc == 2 && argv[1][0] != '-')\n  {\n    in_name = argv[1];\n  }\n  else if (argc == 3 && !strcmp(argv[1], \"--plain\"))\n  {\n    plain   = true;\n    in_name = argv[2];\n  }\n  else\n  {\n    fputs(\"Usage: ./dithertest [--plain] INPUT.pwg >OUTPUT.pwg\\n\", stderr);\n    return (1);\n  }\n\n  // Open input raster file...\n  if ((in_file = open(in_name, O_RDONLY)) < 0)\n  {\n    perror(in_name);\n    return (1);\n  }\n\n  if ((in_ras = cupsRasterOpen(in_file, CUPS_RASTER_READ)) == NULL)\n  {\n    fprintf(stderr, \"%s: %s\\n\", in_name, cupsGetErrorString());\n    close(in_file);\n    return (1);\n  }\n\n  // Output output raster stream...\n  if ((out_ras = cupsRasterOpen(1, CUPS_RASTER_WRITE_PWG)) == NULL)\n  {\n    fprintf(stderr, \"stdout: %s\\n\", cupsGetErrorString());\n    close(in_file);\n    cupsRasterClose(in_ras);\n    return (1);\n  }\n\n  // Loop until we run out of pages...\n  memset(&options, 0, sizeof(options));\n  memcpy(&options.dither, clustered, sizeof(options.dither));\n\n  for (page = 1; cupsRasterReadHeader(in_ras, &in_header); page ++)\n  {\n    // Show page info...\n    fprintf(stderr, \"Page %u: %ux%ux%u\\n\", page, in_header.cupsWidth, in_header.cupsHeight, in_header.cupsBitsPerPixel);\n\n    // Build the output header and job options...\n    memcpy(&options.header, &in_header, sizeof(options.header));\n\n    memcpy(&out_header, &in_header, sizeof(out_header));\n    if (plain)\n    {\n      out_header.cupsColorOrder   = CUPS_ORDER_CHUNKED;\n      out_header.cupsColorSpace   = CUPS_CSPACE_K;\n      out_header.cupsBitsPerColor = 1;\n      out_header.cupsBitsPerPixel = 1;\n      out_header.cupsBytesPerLine = (out_header.cupsWidth + 7) / 8;\n      out_header.cupsNumColors    = 1;\n    }\n    else\n    {\n      out_header.cupsColorOrder   = CUPS_ORDER_CHUNKED;\n      out_header.cupsColorSpace   = CUPS_CSPACE_SRGB;\n      out_header.cupsBitsPerColor = 8;\n      out_header.cupsBitsPerPixel = 24;\n      out_header.cupsBytesPerLine = out_header.cupsWidth * 3;\n      out_header.cupsNumColors    = 3;\n    }\n\n    // Allocate memory\n    if (!lprintDitherAlloc(&dither, NULL, &options, CUPS_CSPACE_K, 1.0))\n    {\n      fputs(\"Unable to initialize dither buffer.\\n\", stderr);\n      ret = 1;\n      break;\n    }\n\n    in_line  = malloc(in_header.cupsBytesPerLine);\n    out_line = malloc(out_header.cupsBytesPerLine);\n\n    if (!in_line || !out_line)\n    {\n      perror(\"Unable to allocate memory for page\");\n      free(in_line);\n      free(out_line);\n      lprintDitherFree(&dither);\n      ret = 1;\n      break;\n    }\n\n    // Dither page...\n    cupsRasterWriteHeader(out_ras, &out_header);\n\n    for (y = 0; y < in_header.cupsHeight; y ++)\n    {\n      cupsRasterReadPixels(in_ras, in_line, in_header.cupsBytesPerLine);\n\n      if (lprintDitherLine(&dither, y, in_line))\n      {\n\tif (plain)\n\t  cupsRasterWritePixels(out_ras, dither.output, out_header.cupsBytesPerLine);\n\telse\n\t  write_line(&dither, y, out_ras, &out_header, out_line);\n      }\n    }\n\n    if (lprintDitherLine(&dither, y, NULL))\n    {\n      if (plain)\n        cupsRasterWritePixels(out_ras, dither.output, out_header.cupsBytesPerLine);\n      else\n\twrite_line(&dither, y, out_ras, &out_header, out_line);\n    }\n\n    // Free memory\n    lprintDitherFree(&dither);\n    free(in_line);\n    free(out_line);\n  }\n\n  // Cleanup and exit...\n  close(in_file);\n  cupsRasterClose(in_ras);\n  cupsRasterClose(out_ras);\n\n  return (ret);\n}\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "global_variable",
+    "start_line": 31,
+    "end_line": 31,
+    "code": "nt\t\t\tret = 0;\t",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "global_variable",
+    "start_line": 32,
+    "end_line": 32,
+    "code": "ool\t\t\tplain = false;\t",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "global_variable",
+    "start_line": 45,
+    "end_line": 63,
+    "code": "tatic const pappl_dither_t clustered =\n  {\t\t\t\t\t// Clustered-Dot Dither Matrix\n    {  96,  40,  48, 104, 140, 188, 196, 148,  97,  41,  49, 105, 141, 189, 197, 149 },\n    {  32,   0,   8,  56, 180, 236, 244, 204,  33,   1,   9,  57, 181, 237, 245, 205 },\n    {  88,  24,  16,  64, 172, 228, 252, 212,  89,  25,  17,  65, 173, 229, 253, 213 },\n    { 120,  80,  72, 112, 132, 164, 220, 156, 121,  81,  73, 113, 133, 165, 221, 157 },\n    { 136, 184, 192, 144, 100,  44,  52, 108, 137, 185, 193, 145, 101,  45,  53, 109 },\n    { 176, 232, 240, 200,  36,   4,  12,  60, 177, 233, 241, 201,  37,   5,  13,  61 },\n    { 168, 224, 248, 208,  92,  28,  20,  68, 169, 225, 249, 209,  93,  29,  21,  69 },\n    { 128, 160, 216, 152, 124,  84,  76, 116, 129, 161, 217, 153, 125,  85,  77, 117 },\n    {  98,  42,  50, 106, 142, 190, 198, 150,  99,  43,  51, 107, 143, 191, 199, 151 },\n    {  34,   2,  10,  58, 182, 238, 246, 206,  35,   3,  11,  59, 183, 239, 247, 207 },\n    {  90,  26,  18,  66, 174, 230, 254, 214,  91,  27,  19,  67, 175, 231, 254, 215 },\n    { 122,  82,  74, 114, 134, 166, 222, 158, 123,  83,  75, 115, 135, 167, 223, 159 },\n    { 138, 186, 194, 146, 102,  46,  54, 110, 139, 187, 195, 147, 103,  47,  55, 111 },\n    { 178, 234, 242, 202,  38,   6,  14,  62, 179, 235, 243, 203,  39,   7,  15,  63 },\n    { 170, 226, 250, 210,  94,  30,  22,  70, 171, 227, 251, 211,  95,  31,  23,  71 },\n    { 130, 162, 218, 154, 126,  86,  78, 118, 131, 163, 219, 155, 127,  87,  79, 119 }\n  };\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 67,
+    "end_line": 80,
+    "code": "f (argc == 2 && argv[1][0] != '-')\n  {\n    in_name = argv[1];\n  }\n  else if (argc == 3 && !strcmp(argv[1], \"--plain\"))\n  {\n    plain   = true;\n    in_name = argv[2];\n  }\n  else\n  {\n    fputs(\"Usage: ./dithertest [--plain] INPUT.pwg >OUTPUT.pwg\\n\", stderr);\n    return (1);\n  }\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 71,
+    "end_line": 80,
+    "code": "lse if (argc == 3 && !strcmp(argv[1], \"--plain\"))\n  {\n    plain   = true;\n    in_name = argv[2];\n  }\n  else\n  {\n    fputs(\"Usage: ./dithertest [--plain] INPUT.pwg >OUTPUT.pwg\\n\", stderr);\n    return (1);\n  }\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 71,
+    "end_line": 80,
+    "code": "f (argc == 3 && !strcmp(argv[1], \"--plain\"))\n  {\n    plain   = true;\n    in_name = argv[2];\n  }\n  else\n  {\n    fputs(\"Usage: ./dithertest [--plain] INPUT.pwg >OUTPUT.pwg\\n\", stderr);\n    return (1);\n  }\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "anonymous_initializer_block",
+    "start_line": 76,
+    "end_line": 80,
+    "code": "lse\n  {\n    fputs(\"Usage: ./dithertest [--plain] INPUT.pwg >OUTPUT.pwg\\n\", stderr);\n    return (1);\n  }\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 109,
+    "end_line": 186,
+    "code": "or (page = 1; cupsRasterReadHeader(in_ras, &in_header); page ++)\n  {\n    // Show page info...\n    fprintf(stderr, \"Page %u: %ux%ux%u\\n\", page, in_header.cupsWidth, in_header.cupsHeight, in_header.cupsBitsPerPixel);\n\n    // Build the output header and job options...\n    memcpy(&options.header, &in_header, sizeof(options.header));\n\n    memcpy(&out_header, &in_header, sizeof(out_header));\n    if (plain)\n    {\n      out_header.cupsColorOrder   = CUPS_ORDER_CHUNKED;\n      out_header.cupsColorSpace   = CUPS_CSPACE_K;\n      out_header.cupsBitsPerColor = 1;\n      out_header.cupsBitsPerPixel = 1;\n      out_header.cupsBytesPerLine = (out_header.cupsWidth + 7) / 8;\n      out_header.cupsNumColors    = 1;\n    }\n    else\n    {\n      out_header.cupsColorOrder   = CUPS_ORDER_CHUNKED;\n      out_header.cupsColorSpace   = CUPS_CSPACE_SRGB;\n      out_header.cupsBitsPerColor = 8;\n      out_header.cupsBitsPerPixel = 24;\n      out_header.cupsBytesPerLine = out_header.cupsWidth * 3;\n      out_header.cupsNumColors    = 3;\n    }\n\n    // Allocate memory\n    if (!lprintDitherAlloc(&dither, NULL, &options, CUPS_CSPACE_K, 1.0))\n    {\n      fputs(\"Unable to initialize dither buffer.\\n\", stderr);\n      ret = 1;\n      break;\n    }\n\n    in_line  = malloc(in_header.cupsBytesPerLine);\n    out_line = malloc(out_header.cupsBytesPerLine);\n\n    if (!in_line || !out_line)\n    {\n      perror(\"Unable to allocate memory for page\");\n      free(in_line);\n      free(out_line);\n      lprintDitherFree(&dither);\n      ret = 1;\n      break;\n    }\n\n    // Dither page...\n    cupsRasterWriteHeader(out_ras, &out_header);\n\n    for (y = 0; y < in_header.cupsHeight; y ++)\n    {\n      cupsRasterReadPixels(in_ras, in_line, in_header.cupsBytesPerLine);\n\n      if (lprintDitherLine(&dither, y, in_line))\n      {\n\tif (plain)\n\t  cupsRasterWritePixels(out_ras, dither.output, out_header.cupsBytesPerLine);\n\telse\n\t  write_line(&dither, y, out_ras, &out_header, out_line);\n      }\n    }\n\n    if (lprintDitherLine(&dither, y, NULL))\n    {\n      if (plain)\n        cupsRasterWritePixels(out_ras, dither.output, out_header.cupsBytesPerLine);\n      else\n\twrite_line(&dither, y, out_ras, &out_header, out_line);\n    }\n\n    // Free memory\n    lprintDitherFree(&dither);\n    free(in_line);\n    free(out_line);\n  }\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 110,
+    "end_line": 186,
+    "code": "\n    // Show page info...\n    fprintf(stderr, \"Page %u: %ux%ux%u\\n\", page, in_header.cupsWidth, in_header.cupsHeight, in_header.cupsBitsPerPixel);\n\n    // Build the output header and job options...\n    memcpy(&options.header, &in_header, sizeof(options.header));\n\n    memcpy(&out_header, &in_header, sizeof(out_header));\n    if (plain)\n    {\n      out_header.cupsColorOrder   = CUPS_ORDER_CHUNKED;\n      out_header.cupsColorSpace   = CUPS_CSPACE_K;\n      out_header.cupsBitsPerColor = 1;\n      out_header.cupsBitsPerPixel = 1;\n      out_header.cupsBytesPerLine = (out_header.cupsWidth + 7) / 8;\n      out_header.cupsNumColors    = 1;\n    }\n    else\n    {\n      out_header.cupsColorOrder   = CUPS_ORDER_CHUNKED;\n      out_header.cupsColorSpace   = CUPS_CSPACE_SRGB;\n      out_header.cupsBitsPerColor = 8;\n      out_header.cupsBitsPerPixel = 24;\n      out_header.cupsBytesPerLine = out_header.cupsWidth * 3;\n      out_header.cupsNumColors    = 3;\n    }\n\n    // Allocate memory\n    if (!lprintDitherAlloc(&dither, NULL, &options, CUPS_CSPACE_K, 1.0))\n    {\n      fputs(\"Unable to initialize dither buffer.\\n\", stderr);\n      ret = 1;\n      break;\n    }\n\n    in_line  = malloc(in_header.cupsBytesPerLine);\n    out_line = malloc(out_header.cupsBytesPerLine);\n\n    if (!in_line || !out_line)\n    {\n      perror(\"Unable to allocate memory for page\");\n      free(in_line);\n      free(out_line);\n      lprintDitherFree(&dither);\n      ret = 1;\n      break;\n    }\n\n    // Dither page...\n    cupsRasterWriteHeader(out_ras, &out_header);\n\n    for (y = 0; y < in_header.cupsHeight; y ++)\n    {\n      cupsRasterReadPixels(in_ras, in_line, in_header.cupsBytesPerLine);\n\n      if (lprintDitherLine(&dither, y, in_line))\n      {\n\tif (plain)\n\t  cupsRasterWritePixels(out_ras, dither.output, out_header.cupsBytesPerLine);\n\telse\n\t  write_line(&dither, y, out_ras, &out_header, out_line);\n      }\n    }\n\n    if (lprintDitherLine(&dither, y, NULL))\n    {\n      if (plain)\n        cupsRasterWritePixels(out_ras, dither.output, out_header.cupsBytesPerLine);\n      else\n\twrite_line(&dither, y, out_ras, &out_header, out_line);\n    }\n\n    // Free memory\n    lprintDitherFree(&dither);\n    free(in_line);\n    free(out_line);\n  }\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 118,
+    "end_line": 135,
+    "code": "f (plain)\n    {\n      out_header.cupsColorOrder   = CUPS_ORDER_CHUNKED;\n      out_header.cupsColorSpace   = CUPS_CSPACE_K;\n      out_header.cupsBitsPerColor = 1;\n      out_header.cupsBitsPerPixel = 1;\n      out_header.cupsBytesPerLine = (out_header.cupsWidth + 7) / 8;\n      out_header.cupsNumColors    = 1;\n    }\n    else\n    {\n      out_header.cupsColorOrder   = CUPS_ORDER_CHUNKED;\n      out_header.cupsColorSpace   = CUPS_CSPACE_SRGB;\n      out_header.cupsBitsPerColor = 8;\n      out_header.cupsBitsPerPixel = 24;\n      out_header.cupsBytesPerLine = out_header.cupsWidth * 3;\n      out_header.cupsNumColors    = 3;\n    }\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 119,
+    "end_line": 126,
+    "code": "\n      out_header.cupsColorOrder   = CUPS_ORDER_CHUNKED;\n      out_header.cupsColorSpace   = CUPS_CSPACE_K;\n      out_header.cupsBitsPerColor = 1;\n      out_header.cupsBitsPerPixel = 1;\n      out_header.cupsBytesPerLine = (out_header.cupsWidth + 7) / 8;\n      out_header.cupsNumColors    = 1;\n    }\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 120,
+    "end_line": 120,
+    "code": "ut_header.cupsColorOrder   = CUPS_ORDER_CHUNKED;\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 120,
+    "end_line": 120,
+    "code": "ut_header.cupsColorOrder   = CUPS_ORDER_CHUNKED;",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 121,
+    "end_line": 121,
+    "code": "ut_header.cupsColorSpace   = CUPS_CSPACE_K;\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 121,
+    "end_line": 121,
+    "code": "ut_header.cupsColorSpace   = CUPS_CSPACE_K;",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 122,
+    "end_line": 122,
+    "code": "ut_header.cupsBitsPerColor = 1;\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 122,
+    "end_line": 122,
+    "code": "ut_header.cupsBitsPerColor = 1;",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 123,
+    "end_line": 123,
+    "code": "ut_header.cupsBitsPerPixel = 1;\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 123,
+    "end_line": 123,
+    "code": "ut_header.cupsBitsPerPixel = 1;",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 124,
+    "end_line": 124,
+    "code": "ut_header.cupsBytesPerLine = (out_header.cupsWidth + 7) / 8;\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 124,
+    "end_line": 124,
+    "code": "ut_header.cupsBytesPerLine = (out_header.cupsWidth + 7) / 8;",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 125,
+    "end_line": 125,
+    "code": "ut_header.cupsNumColors    = 1;\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 125,
+    "end_line": 125,
+    "code": "ut_header.cupsNumColors    = 1;",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 127,
+    "end_line": 135,
+    "code": "lse\n    {\n      out_header.cupsColorOrder   = CUPS_ORDER_CHUNKED;\n      out_header.cupsColorSpace   = CUPS_CSPACE_SRGB;\n      out_header.cupsBitsPerColor = 8;\n      out_header.cupsBitsPerPixel = 24;\n      out_header.cupsBytesPerLine = out_header.cupsWidth * 3;\n      out_header.cupsNumColors    = 3;\n    }\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 128,
+    "end_line": 135,
+    "code": "\n      out_header.cupsColorOrder   = CUPS_ORDER_CHUNKED;\n      out_header.cupsColorSpace   = CUPS_CSPACE_SRGB;\n      out_header.cupsBitsPerColor = 8;\n      out_header.cupsBitsPerPixel = 24;\n      out_header.cupsBytesPerLine = out_header.cupsWidth * 3;\n      out_header.cupsNumColors    = 3;\n    }\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 129,
+    "end_line": 129,
+    "code": "ut_header.cupsColorOrder   = CUPS_ORDER_CHUNKED;\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 129,
+    "end_line": 129,
+    "code": "ut_header.cupsColorOrder   = CUPS_ORDER_CHUNKED;",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 130,
+    "end_line": 130,
+    "code": "ut_header.cupsColorSpace   = CUPS_CSPACE_SRGB;\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 130,
+    "end_line": 130,
+    "code": "ut_header.cupsColorSpace   = CUPS_CSPACE_SRGB;",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 131,
+    "end_line": 131,
+    "code": "ut_header.cupsBitsPerColor = 8;\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 131,
+    "end_line": 131,
+    "code": "ut_header.cupsBitsPerColor = 8;",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 132,
+    "end_line": 132,
+    "code": "ut_header.cupsBitsPerPixel = 24;\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 132,
+    "end_line": 132,
+    "code": "ut_header.cupsBitsPerPixel = 24;",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 133,
+    "end_line": 133,
+    "code": "ut_header.cupsBytesPerLine = out_header.cupsWidth * 3;\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 133,
+    "end_line": 133,
+    "code": "ut_header.cupsBytesPerLine = out_header.cupsWidth * 3;",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 134,
+    "end_line": 134,
+    "code": "ut_header.cupsNumColors    = 3;\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 134,
+    "end_line": 134,
+    "code": "ut_header.cupsNumColors    = 3;",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 138,
+    "end_line": 143,
+    "code": "f (!lprintDitherAlloc(&dither, NULL, &options, CUPS_CSPACE_K, 1.0))\n    {\n      fputs(\"Unable to initialize dither buffer.\\n\", stderr);\n      ret = 1;\n      break;\n    }\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 139,
+    "end_line": 143,
+    "code": "\n      fputs(\"Unable to initialize dither buffer.\\n\", stderr);\n      ret = 1;\n      break;\n    }\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 145,
+    "end_line": 145,
+    "code": "n_line  = malloc(in_header.cupsBytesPerLine);\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 145,
+    "end_line": 145,
+    "code": "n_line  = malloc(in_header.cupsBytesPerLine);",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 146,
+    "end_line": 146,
+    "code": "ut_line = malloc(out_header.cupsBytesPerLine);\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 146,
+    "end_line": 146,
+    "code": "ut_line = malloc(out_header.cupsBytesPerLine);",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 161,
+    "end_line": 172,
+    "code": "or (y = 0; y < in_header.cupsHeight; y ++)\n    {\n      cupsRasterReadPixels(in_ras, in_line, in_header.cupsBytesPerLine);\n\n      if (lprintDitherLine(&dither, y, in_line))\n      {\n\tif (plain)\n\t  cupsRasterWritePixels(out_ras, dither.output, out_header.cupsBytesPerLine);\n\telse\n\t  write_line(&dither, y, out_ras, &out_header, out_line);\n      }\n    }\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "function",
+    "start_line": 202,
+    "end_line": 269,
+    "name": "write_line",
+    "parent": null,
+    "hierarchy": "write_line",
+    "code": "tatic void\nwrite_line(\n    lprint_dither_t    *dither,\t\t// Dither buffer\n    unsigned           y,\t\t// Current line\n    cups_raster_t      *out_ras,\t// Output raster stream\n    cups_page_header_t *out_header,\t// Output page header\n    unsigned char      *out_line)\t// Output line buffer\n{\n  unsigned\t\tcount;\t\t// Number of pixels left\n  unsigned char\t\t*out_ptr,\t// Pointer into output line\n\t\t\t*dptr,\t\t// Pointer into dither output\n\t\t\tdbit;\t\t// Bit in dither output\n  unsigned char\t\t*in_ptr;\t// Pointer into input line\n\n\n  // Provide a color-coded version of the dithered output, with blue showing\n  // repeated areas...\n  for (count = dither->in_width, out_ptr = out_line, dptr = dither->output, dbit = 128, in_ptr = dither->input[(y - 1) & 3]; count > 0; count --, in_ptr ++)\n  {\n    // Set the current output pixel color...\n    if (*dptr & dbit)\n    {\n      // Black or dark blue\n      if (*in_ptr < 255)\n      {\n\t// Dark yellow for gray that came out black\n\t*out_ptr++ = 79 - *in_ptr / 8;\n\t*out_ptr++ = 79 - *in_ptr / 8;\n\t*out_ptr++ = 31;\n      }\n      else\n      {\n        // Black\n\t*out_ptr++ = 0;\n\t*out_ptr++ = 0;\n        *out_ptr++ = 0;\n      }\n    }\n    else if (*in_ptr)\n    {\n      // Yellow for gray that came out white\n      *out_ptr++ = 255 - *in_ptr / 4;\n      *out_ptr++ = 255 - *in_ptr / 4;\n      *out_ptr++ = 127;\n    }\n    else\n    {\n      // White\n      *out_ptr++ = 255;\n      *out_ptr++ = 255;\n      *out_ptr++ = 255;\n    }\n\n    // Advance to the next bit in the dithered output...\n    if (dbit == 1)\n    {\n      dbit = 128;\n      dptr ++;\n    }\n    else\n    {\n      dbit /= 2;\n    }\n  }\n\n  // Write the output line and return...\n  cupsRasterWritePixels(out_ras, out_line, out_header->cupsBytesPerLine);\n}\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 202,
+    "end_line": 269,
+    "code": "tatic void\nwrite_line(\n    lprint_dither_t    *dither,\t\t// Dither buffer\n    unsigned           y,\t\t// Current line\n    cups_raster_t      *out_ras,\t// Output raster stream\n    cups_page_header_t *out_header,\t// Output page header\n    unsigned char      *out_line)\t// Output line buffer\n{\n  unsigned\t\tcount;\t\t// Number of pixels left\n  unsigned char\t\t*out_ptr,\t// Pointer into output line\n\t\t\t*dptr,\t\t// Pointer into dither output\n\t\t\tdbit;\t\t// Bit in dither output\n  unsigned char\t\t*in_ptr;\t// Pointer into input line\n\n\n  // Provide a color-coded version of the dithered output, with blue showing\n  // repeated areas...\n  for (count = dither->in_width, out_ptr = out_line, dptr = dither->output, dbit = 128, in_ptr = dither->input[(y - 1) & 3]; count > 0; count --, in_ptr ++)\n  {\n    // Set the current output pixel color...\n    if (*dptr & dbit)\n    {\n      // Black or dark blue\n      if (*in_ptr < 255)\n      {\n\t// Dark yellow for gray that came out black\n\t*out_ptr++ = 79 - *in_ptr / 8;\n\t*out_ptr++ = 79 - *in_ptr / 8;\n\t*out_ptr++ = 31;\n      }\n      else\n      {\n        // Black\n\t*out_ptr++ = 0;\n\t*out_ptr++ = 0;\n        *out_ptr++ = 0;\n      }\n    }\n    else if (*in_ptr)\n    {\n      // Yellow for gray that came out white\n      *out_ptr++ = 255 - *in_ptr / 4;\n      *out_ptr++ = 255 - *in_ptr / 4;\n      *out_ptr++ = 127;\n    }\n    else\n    {\n      // White\n      *out_ptr++ = 255;\n      *out_ptr++ = 255;\n      *out_ptr++ = 255;\n    }\n\n    // Advance to the next bit in the dithered output...\n    if (dbit == 1)\n    {\n      dbit = 128;\n      dptr ++;\n    }\n    else\n    {\n      dbit /= 2;\n    }\n  }\n\n  // Write the output line and return...\n  cupsRasterWritePixels(out_ras, out_line, out_header->cupsBytesPerLine);\n}\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 202,
+    "end_line": 269,
+    "code": "tatic void\nwrite_line(\n    lprint_dither_t    *dither,\t\t// Dither buffer\n    unsigned           y,\t\t// Current line\n    cups_raster_t      *out_ras,\t// Output raster stream\n    cups_page_header_t *out_header,\t// Output page header\n    unsigned char      *out_line)\t// Output line buffer\n{\n  unsigned\t\tcount;\t\t// Number of pixels left\n  unsigned char\t\t*out_ptr,\t// Pointer into output line\n\t\t\t*dptr,\t\t// Pointer into dither output\n\t\t\tdbit;\t\t// Bit in dither output\n  unsigned char\t\t*in_ptr;\t// Pointer into input line\n\n\n  // Provide a color-coded version of the dithered output, with blue showing\n  // repeated areas...\n  for (count = dither->in_width, out_ptr = out_line, dptr = dither->output, dbit = 128, in_ptr = dither->input[(y - 1) & 3]; count > 0; count --, in_ptr ++)\n  {\n    // Set the current output pixel color...\n    if (*dptr & dbit)\n    {\n      // Black or dark blue\n      if (*in_ptr < 255)\n      {\n\t// Dark yellow for gray that came out black\n\t*out_ptr++ = 79 - *in_ptr / 8;\n\t*out_ptr++ = 79 - *in_ptr / 8;\n\t*out_ptr++ = 31;\n      }\n      else\n      {\n        // Black\n\t*out_ptr++ = 0;\n\t*out_ptr++ = 0;\n        *out_ptr++ = 0;\n      }\n    }\n    else if (*in_ptr)\n    {\n      // Yellow for gray that came out white\n      *out_ptr++ = 255 - *in_ptr / 4;\n      *out_ptr++ = 255 - *in_ptr / 4;\n      *out_ptr++ = 127;\n    }\n    else\n    {\n      // White\n      *out_ptr++ = 255;\n      *out_ptr++ = 255;\n      *out_ptr++ = 255;\n    }\n\n    // Advance to the next bit in the dithered output...\n    if (dbit == 1)\n    {\n      dbit = 128;\n      dptr ++;\n    }\n    else\n    {\n      dbit /= 2;\n    }\n  }\n\n  // Write the output line and return...\n  cupsRasterWritePixels(out_ras, out_line, out_header->cupsBytesPerLine);\n}\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 209,
+    "end_line": 269,
+    "code": "\n  unsigned\t\tcount;\t\t// Number of pixels left\n  unsigned char\t\t*out_ptr,\t// Pointer into output line\n\t\t\t*dptr,\t\t// Pointer into dither output\n\t\t\tdbit;\t\t// Bit in dither output\n  unsigned char\t\t*in_ptr;\t// Pointer into input line\n\n\n  // Provide a color-coded version of the dithered output, with blue showing\n  // repeated areas...\n  for (count = dither->in_width, out_ptr = out_line, dptr = dither->output, dbit = 128, in_ptr = dither->input[(y - 1) & 3]; count > 0; count --, in_ptr ++)\n  {\n    // Set the current output pixel color...\n    if (*dptr & dbit)\n    {\n      // Black or dark blue\n      if (*in_ptr < 255)\n      {\n\t// Dark yellow for gray that came out black\n\t*out_ptr++ = 79 - *in_ptr / 8;\n\t*out_ptr++ = 79 - *in_ptr / 8;\n\t*out_ptr++ = 31;\n      }\n      else\n      {\n        // Black\n\t*out_ptr++ = 0;\n\t*out_ptr++ = 0;\n        *out_ptr++ = 0;\n      }\n    }\n    else if (*in_ptr)\n    {\n      // Yellow for gray that came out white\n      *out_ptr++ = 255 - *in_ptr / 4;\n      *out_ptr++ = 255 - *in_ptr / 4;\n      *out_ptr++ = 127;\n    }\n    else\n    {\n      // White\n      *out_ptr++ = 255;\n      *out_ptr++ = 255;\n      *out_ptr++ = 255;\n    }\n\n    // Advance to the next bit in the dithered output...\n    if (dbit == 1)\n    {\n      dbit = 128;\n      dptr ++;\n    }\n    else\n    {\n      dbit /= 2;\n    }\n  }\n\n  // Write the output line and return...\n  cupsRasterWritePixels(out_ras, out_line, out_header->cupsBytesPerLine);\n}\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 209,
+    "end_line": 269,
+    "code": "\n  unsigned\t\tcount;\t\t// Number of pixels left\n  unsigned char\t\t*out_ptr,\t// Pointer into output line\n\t\t\t*dptr,\t\t// Pointer into dither output\n\t\t\tdbit;\t\t// Bit in dither output\n  unsigned char\t\t*in_ptr;\t// Pointer into input line\n\n\n  // Provide a color-coded version of the dithered output, with blue showing\n  // repeated areas...\n  for (count = dither->in_width, out_ptr = out_line, dptr = dither->output, dbit = 128, in_ptr = dither->input[(y - 1) & 3]; count > 0; count --, in_ptr ++)\n  {\n    // Set the current output pixel color...\n    if (*dptr & dbit)\n    {\n      // Black or dark blue\n      if (*in_ptr < 255)\n      {\n\t// Dark yellow for gray that came out black\n\t*out_ptr++ = 79 - *in_ptr / 8;\n\t*out_ptr++ = 79 - *in_ptr / 8;\n\t*out_ptr++ = 31;\n      }\n      else\n      {\n        // Black\n\t*out_ptr++ = 0;\n\t*out_ptr++ = 0;\n        *out_ptr++ = 0;\n      }\n    }\n    else if (*in_ptr)\n    {\n      // Yellow for gray that came out white\n      *out_ptr++ = 255 - *in_ptr / 4;\n      *out_ptr++ = 255 - *in_ptr / 4;\n      *out_ptr++ = 127;\n    }\n    else\n    {\n      // White\n      *out_ptr++ = 255;\n      *out_ptr++ = 255;\n      *out_ptr++ = 255;\n    }\n\n    // Advance to the next bit in the dithered output...\n    if (dbit == 1)\n    {\n      dbit = 128;\n      dptr ++;\n    }\n    else\n    {\n      dbit /= 2;\n    }\n  }\n\n  // Write the output line and return...\n  cupsRasterWritePixels(out_ras, out_line, out_header->cupsBytesPerLine);\n}\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 219,
+    "end_line": 265,
+    "code": "or (count = dither->in_width, out_ptr = out_line, dptr = dither->output, dbit = 128, in_ptr = dither->input[(y - 1) & 3]; count > 0; count --, in_ptr ++)\n  {\n    // Set the current output pixel color...\n    if (*dptr & dbit)\n    {\n      // Black or dark blue\n      if (*in_ptr < 255)\n      {\n\t// Dark yellow for gray that came out black\n\t*out_ptr++ = 79 - *in_ptr / 8;\n\t*out_ptr++ = 79 - *in_ptr / 8;\n\t*out_ptr++ = 31;\n      }\n      else\n      {\n        // Black\n\t*out_ptr++ = 0;\n\t*out_ptr++ = 0;\n        *out_ptr++ = 0;\n      }\n    }\n    else if (*in_ptr)\n    {\n      // Yellow for gray that came out white\n      *out_ptr++ = 255 - *in_ptr / 4;\n      *out_ptr++ = 255 - *in_ptr / 4;\n      *out_ptr++ = 127;\n    }\n    else\n    {\n      // White\n      *out_ptr++ = 255;\n      *out_ptr++ = 255;\n      *out_ptr++ = 255;\n    }\n\n    // Advance to the next bit in the dithered output...\n    if (dbit == 1)\n    {\n      dbit = 128;\n      dptr ++;\n    }\n    else\n    {\n      dbit /= 2;\n    }\n  }\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 219,
+    "end_line": 265,
+    "code": "or (count = dither->in_width, out_ptr = out_line, dptr = dither->output, dbit = 128, in_ptr = dither->input[(y - 1) & 3]; count > 0; count --, in_ptr ++)\n  {\n    // Set the current output pixel color...\n    if (*dptr & dbit)\n    {\n      // Black or dark blue\n      if (*in_ptr < 255)\n      {\n\t// Dark yellow for gray that came out black\n\t*out_ptr++ = 79 - *in_ptr / 8;\n\t*out_ptr++ = 79 - *in_ptr / 8;\n\t*out_ptr++ = 31;\n      }\n      else\n      {\n        // Black\n\t*out_ptr++ = 0;\n\t*out_ptr++ = 0;\n        *out_ptr++ = 0;\n      }\n    }\n    else if (*in_ptr)\n    {\n      // Yellow for gray that came out white\n      *out_ptr++ = 255 - *in_ptr / 4;\n      *out_ptr++ = 255 - *in_ptr / 4;\n      *out_ptr++ = 127;\n    }\n    else\n    {\n      // White\n      *out_ptr++ = 255;\n      *out_ptr++ = 255;\n      *out_ptr++ = 255;\n    }\n\n    // Advance to the next bit in the dithered output...\n    if (dbit == 1)\n    {\n      dbit = 128;\n      dptr ++;\n    }\n    else\n    {\n      dbit /= 2;\n    }\n  }\n",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 219,
+    "end_line": 219,
+    "code": "ount = dither->in_width, out_ptr = out_line, dptr = dither->output, dbit = 128, in_ptr = dither->input[(y - 1) & 3];",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 219,
+    "end_line": 219,
+    "code": "ount = dither->in_width, out_ptr = out_line, dptr = dither->output, dbit = 128, in_ptr = dither->input[(y - 1) & 3];",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 219,
+    "end_line": 219,
+    "code": "ut_ptr = out_line, dptr = dither->output, dbit = 128, in_ptr = dither->input[(y - 1) & 3];",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 219,
+    "end_line": 219,
+    "code": "ut_ptr = out_line, dptr = dither->output, dbit = 128, in_ptr = dither->input[(y - 1) & 3];",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 219,
+    "end_line": 219,
+    "code": "ptr = dither->output, dbit = 128, in_ptr = dither->input[(y - 1) & 3];",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 219,
+    "end_line": 219,
+    "code": "ptr = dither->output, dbit = 128, in_ptr = dither->input[(y - 1) & 3];",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 219,
+    "end_line": 219,
+    "code": "bit = 128, in_ptr = dither->input[(y - 1) & 3];",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 219,
+    "end_line": 219,
+    "code": "bit = 128, in_ptr = dither->input[(y - 1) & 3];",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 219,
+    "end_line": 219,
+    "code": "n_ptr = dither->input[(y - 1) & 3];",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 219,
+    "end_line": 219,
+    "code": "n_ptr = dither->input[(y - 1) & 3];",
+    "file": "data/codebase/lprint/testdither.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 220,
+    "end_line": 265,
+    "code": "\n    // Set the current output pixel color...\n    if (*dptr & dbit)\n    {\n      // Black or dark blue\n      if (*in_ptr < 255)\n      {\n\t// Dark yellow for gray that came out black\n\t*out_ptr++ = 79 - *in_ptr / 8;\n\t*out_ptr++ = 79 - *in_ptr / 8;\n\t*out_ptr++ = 31;\n      }\n      else\n      {\n        // Black\n\t*out_ptr++ = 0;\n\t*out_ptr++ = 0;\n        *out_ptr++ = 0;\n      }\n    }\n    else if (*in_ptr)\n    {\n      // Yellow for gray that came out white\n      *out_ptr++ = 255 - *in_ptr / 4;\n      *out_ptr++ = 255 - *in_ptr / 4;\n      *out_ptr++ = 127;\n    }\n    else\n    {\n      // White\n      *out_ptr++ = 255;\n      *out_ptr++ = 255;\n      *out_ptr++ = 255;\n    }\n\n    // Advance to the next bit in the dithered output...\n    if (dbit == 1)\n    {\n      dbit = 128;\n      dptr ++;\n    }\n    else\n    {\n      dbit /= 2;\n    }\n  }\n",
+    "file": "data/codebase/lprint/testdither.c"
+  }
+]

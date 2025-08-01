@@ -1,0 +1,247 @@
+[
+  {
+    "type": "struct_assignment",
+    "start_line": 1,
+    "end_line": 52,
+    "code": "#include <stdio.h>\n#include <string.h>\n\n#define MAX_DEVICES 10\n#define COMPANY_NAME \"EmbeddedSoft\"\n\ntypedef enum {\n    SENSOR,\n    ACTUATOR,\n    CONTROLLER\n} DeviceType;\n\ntypedef struct {\n    char name[50];\n    int id;\n    float firmware_version;\n    DeviceType type;\n} Device;\n\nstatic const char *device_type_names[] = { \"Sensor\", \"Actuator\", \"Controller\" };\n\nvoid print_device(const Device *d) {\n    printf(\"Device Name : %s\\n\", d->name);\n    printf(\"Device ID   : %d\\n\", d->id);\n    printf(\"Firmware    : %.2f\\n\", d->firmware_version);\n    printf(\"Type        : %s\\n\", device_type_names[d->type]);\n}\n\nfloat average_firmware(Device devices[], int count) {\n    float total = 0;\n    for (int i = 0; i < count; i++) {\n        total += devices[i].firmware_version;\n    }\n    return (count > 0) ? (total / count) : 0;\n}\n\nint main() {\n    Device devices[] = {\n        { \"TempSensor\", 1, 1.05f, SENSOR },\n        { \"ServoActuator\", 2, 2.10f, ACTUATOR },\n        { \"MainController\", 3, 3.00f, CONTROLLER }\n    };\n\n    for (int i = 0; i < 3; i++) {\n        print_device(&devices[i]);\n        printf(\"---------------\\n\");\n    }\n\n    printf(\"Average Firmware Version: %.2f\\n\", average_firmware(devices, 3));\n    return 0;\n}\n",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "function_assignment",
+    "start_line": 1,
+    "end_line": 52,
+    "code": "#include <stdio.h>\n#include <string.h>\n\n#define MAX_DEVICES 10\n#define COMPANY_NAME \"EmbeddedSoft\"\n\ntypedef enum {\n    SENSOR,\n    ACTUATOR,\n    CONTROLLER\n} DeviceType;\n\ntypedef struct {\n    char name[50];\n    int id;\n    float firmware_version;\n    DeviceType type;\n} Device;\n\nstatic const char *device_type_names[] = { \"Sensor\", \"Actuator\", \"Controller\" };\n\nvoid print_device(const Device *d) {\n    printf(\"Device Name : %s\\n\", d->name);\n    printf(\"Device ID   : %d\\n\", d->id);\n    printf(\"Firmware    : %.2f\\n\", d->firmware_version);\n    printf(\"Type        : %s\\n\", device_type_names[d->type]);\n}\n\nfloat average_firmware(Device devices[], int count) {\n    float total = 0;\n    for (int i = 0; i < count; i++) {\n        total += devices[i].firmware_version;\n    }\n    return (count > 0) ? (total / count) : 0;\n}\n\nint main() {\n    Device devices[] = {\n        { \"TempSensor\", 1, 1.05f, SENSOR },\n        { \"ServoActuator\", 2, 2.10f, ACTUATOR },\n        { \"MainController\", 3, 3.00f, CONTROLLER }\n    };\n\n    for (int i = 0; i < 3; i++) {\n        print_device(&devices[i]);\n        printf(\"---------------\\n\");\n    }\n\n    printf(\"Average Firmware Version: %.2f\\n\", average_firmware(devices, 3));\n    return 0;\n}\n",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "static_const_char_pointer_array",
+    "start_line": 1,
+    "end_line": 52,
+    "code": "#include <stdio.h>\n#include <string.h>\n\n#define MAX_DEVICES 10\n#define COMPANY_NAME \"EmbeddedSoft\"\n\ntypedef enum {\n    SENSOR,\n    ACTUATOR,\n    CONTROLLER\n} DeviceType;\n\ntypedef struct {\n    char name[50];\n    int id;\n    float firmware_version;\n    DeviceType type;\n} Device;\n\nstatic const char *device_type_names[] = { \"Sensor\", \"Actuator\", \"Controller\" };\n\nvoid print_device(const Device *d) {\n    printf(\"Device Name : %s\\n\", d->name);\n    printf(\"Device ID   : %d\\n\", d->id);\n    printf(\"Firmware    : %.2f\\n\", d->firmware_version);\n    printf(\"Type        : %s\\n\", device_type_names[d->type]);\n}\n\nfloat average_firmware(Device devices[], int count) {\n    float total = 0;\n    for (int i = 0; i < count; i++) {\n        total += devices[i].firmware_version;\n    }\n    return (count > 0) ? (total / count) : 0;\n}\n\nint main() {\n    Device devices[] = {\n        { \"TempSensor\", 1, 1.05f, SENSOR },\n        { \"ServoActuator\", 2, 2.10f, ACTUATOR },\n        { \"MainController\", 3, 3.00f, CONTROLLER }\n    };\n\n    for (int i = 0; i < 3; i++) {\n        print_device(&devices[i]);\n        printf(\"---------------\\n\");\n    }\n\n    printf(\"Average Firmware Version: %.2f\\n\", average_firmware(devices, 3));\n    return 0;\n}\n",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "include",
+    "start_line": 1,
+    "end_line": 2,
+    "code": "#include <stdio.h>\n",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "include",
+    "start_line": 2,
+    "end_line": 3,
+    "code": "#include <string.h>\n",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "macro",
+    "start_line": 4,
+    "end_line": 5,
+    "code": "#define MAX_DEVICES 10\n",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "macro",
+    "start_line": 5,
+    "end_line": 6,
+    "code": "#define COMPANY_NAME \"EmbeddedSoft\"\n",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "typedef",
+    "start_line": 7,
+    "end_line": 11,
+    "code": "typedef enum {\n    SENSOR,\n    ACTUATOR,\n    CONTROLLER\n} DeviceType;",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "enum",
+    "start_line": 7,
+    "end_line": 11,
+    "code": "enum {\n    SENSOR,\n    ACTUATOR,\n    CONTROLLER\n}",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "typedef",
+    "start_line": 13,
+    "end_line": 18,
+    "code": "typedef struct {\n    char name[50];\n    int id;\n    float firmware_version;\n    DeviceType type;\n} Device;",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "struct",
+    "start_line": 13,
+    "end_line": 18,
+    "code": "struct {\n    char name[50];\n    int id;\n    float firmware_version;\n    DeviceType type;\n}",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "global_variable",
+    "start_line": 20,
+    "end_line": 20,
+    "code": "static const char *device_type_names[] = { \"Sensor\", \"Actuator\", \"Controller\" };",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "static_const_char_pointer_array",
+    "start_line": 20,
+    "end_line": 20,
+    "code": "static const char *device_type_names[] = { \"Sensor\", \"Actuator\", \"Controller\" };",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "anonymous_initializer_block",
+    "start_line": 20,
+    "end_line": 20,
+    "code": "{ \"Sensor\", \"Actuator\", \"Controller\" }",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "function",
+    "start_line": 22,
+    "end_line": 27,
+    "code": "void print_device(const Device *d) {\n    printf(\"Device Name : %s\\n\", d->name);\n    printf(\"Device ID   : %d\\n\", d->id);\n    printf(\"Firmware    : %.2f\\n\", d->firmware_version);\n    printf(\"Type        : %s\\n\", device_type_names[d->type]);\n}",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "anonymous_initializer_block",
+    "start_line": 22,
+    "end_line": 27,
+    "code": "void print_device(const Device *d) {\n    printf(\"Device Name : %s\\n\", d->name);\n    printf(\"Device ID   : %d\\n\", d->id);\n    printf(\"Firmware    : %.2f\\n\", d->firmware_version);\n    printf(\"Type        : %s\\n\", device_type_names[d->type]);\n}",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "anonymous_initializer_block",
+    "start_line": 22,
+    "end_line": 27,
+    "code": "{\n    printf(\"Device Name : %s\\n\", d->name);\n    printf(\"Device ID   : %d\\n\", d->id);\n    printf(\"Firmware    : %.2f\\n\", d->firmware_version);\n    printf(\"Type        : %s\\n\", device_type_names[d->type]);\n}",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "function",
+    "start_line": 29,
+    "end_line": 35,
+    "code": "float average_firmware(Device devices[], int count) {\n    float total = 0;\n    for (int i = 0; i < count; i++) {\n        total += devices[i].firmware_version;\n    }\n    return (count > 0) ? (total / count) : 0;\n}",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 29,
+    "end_line": 35,
+    "code": "float average_firmware(Device devices[], int count) {\n    float total = 0;\n    for (int i = 0; i < count; i++) {\n        total += devices[i].firmware_version;\n    }\n    return (count > 0) ? (total / count) : 0;\n}",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 29,
+    "end_line": 35,
+    "code": "{\n    float total = 0;\n    for (int i = 0; i < count; i++) {\n        total += devices[i].firmware_version;\n    }\n    return (count > 0) ? (total / count) : 0;\n}",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "global_variable",
+    "start_line": 30,
+    "end_line": 30,
+    "code": "float total = 0;",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 31,
+    "end_line": 33,
+    "code": "for (int i = 0; i < count; i++) {\n        total += devices[i].firmware_version;\n    }",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "global_variable",
+    "start_line": 31,
+    "end_line": 31,
+    "code": "int i = 0;",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 31,
+    "end_line": 33,
+    "code": "{\n        total += devices[i].firmware_version;\n    }",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 32,
+    "end_line": 32,
+    "code": "total += devices[i].firmware_version;",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "function",
+    "start_line": 37,
+    "end_line": 51,
+    "code": "int main() {\n    Device devices[] = {\n        { \"TempSensor\", 1, 1.05f, SENSOR },\n        { \"ServoActuator\", 2, 2.10f, ACTUATOR },\n        { \"MainController\", 3, 3.00f, CONTROLLER }\n    };\n\n    for (int i = 0; i < 3; i++) {\n        print_device(&devices[i]);\n        printf(\"---------------\\n\");\n    }\n\n    printf(\"Average Firmware Version: %.2f\\n\", average_firmware(devices, 3));\n    return 0;\n}",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 37,
+    "end_line": 51,
+    "code": "int main() {\n    Device devices[] = {\n        { \"TempSensor\", 1, 1.05f, SENSOR },\n        { \"ServoActuator\", 2, 2.10f, ACTUATOR },\n        { \"MainController\", 3, 3.00f, CONTROLLER }\n    };\n\n    for (int i = 0; i < 3; i++) {\n        print_device(&devices[i]);\n        printf(\"---------------\\n\");\n    }\n\n    printf(\"Average Firmware Version: %.2f\\n\", average_firmware(devices, 3));\n    return 0;\n}",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 37,
+    "end_line": 51,
+    "code": "{\n    Device devices[] = {\n        { \"TempSensor\", 1, 1.05f, SENSOR },\n        { \"ServoActuator\", 2, 2.10f, ACTUATOR },\n        { \"MainController\", 3, 3.00f, CONTROLLER }\n    };\n\n    for (int i = 0; i < 3; i++) {\n        print_device(&devices[i]);\n        printf(\"---------------\\n\");\n    }\n\n    printf(\"Average Firmware Version: %.2f\\n\", average_firmware(devices, 3));\n    return 0;\n}",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "global_variable",
+    "start_line": 38,
+    "end_line": 42,
+    "code": "Device devices[] = {\n        { \"TempSensor\", 1, 1.05f, SENSOR },\n        { \"ServoActuator\", 2, 2.10f, ACTUATOR },\n        { \"MainController\", 3, 3.00f, CONTROLLER }\n    };",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "struct_assignment",
+    "start_line": 38,
+    "end_line": 42,
+    "code": "Device devices[] = {\n        { \"TempSensor\", 1, 1.05f, SENSOR },\n        { \"ServoActuator\", 2, 2.10f, ACTUATOR },\n        { \"MainController\", 3, 3.00f, CONTROLLER }\n    };",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "anonymous_initializer_block",
+    "start_line": 38,
+    "end_line": 42,
+    "code": "{\n        { \"TempSensor\", 1, 1.05f, SENSOR },\n        { \"ServoActuator\", 2, 2.10f, ACTUATOR },\n        { \"MainController\", 3, 3.00f, CONTROLLER }\n    }",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "anonymous_initializer_block",
+    "start_line": 39,
+    "end_line": 39,
+    "code": "{ \"TempSensor\", 1, 1.05f, SENSOR }",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "anonymous_initializer_block",
+    "start_line": 40,
+    "end_line": 40,
+    "code": "{ \"ServoActuator\", 2, 2.10f, ACTUATOR }",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "anonymous_initializer_block",
+    "start_line": 41,
+    "end_line": 41,
+    "code": "{ \"MainController\", 3, 3.00f, CONTROLLER }",
+    "file": "data/codebase/device-manager.c"
+  },
+  {
+    "type": "global_variable",
+    "start_line": 44,
+    "end_line": 44,
+    "code": "int i = 0;",
+    "file": "data/codebase/device-manager.c"
+  }
+]

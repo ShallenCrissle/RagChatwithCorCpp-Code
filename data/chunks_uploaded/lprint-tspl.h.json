@@ -1,0 +1,9 @@
+[
+  {
+    "type": "anonymous_initializer_block",
+    "start_line": 1,
+    "end_line": 14,
+    "code": "//\n// TSPL driver table for LPrint, a Label Printer Application\n//\n// Copyright \u00a9\u00a02023 by Michael R Sweet.\n//\n// Licensed under Apache License v2.0.  See the file \"LICENSE\" for more\n// information.\n//\n\n{ \"tspl_203dpi\",\t\t\"203dpi TSPL Label Printer\", NULL, NULL },\n{ \"tspl_rollo-x1038_203dpi\",\t\"Rollo X1038\",\n  \"MFG:Printer;MDL:Thermal Printer;CMD:XPP,XL;\", NULL },\n{ \"tspl_300dpi\",\t\t\"300dpi TSPL Label Printer\", NULL, NULL },\n",
+    "file": "data/codebase/lprint/lprint-tspl.h"
+  }
+]

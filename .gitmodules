@@ -1,0 +1,9 @@
+[submodule "backend/tree-sitter-c"]
+	path = backend/tree-sitter-c
+	url = https://github.com/tree-sitter/tree-sitter-c
+[submodule "data/codebase/lprint"]
+	path = data/codebase/lprint
+	url = https://github.com/michaelrsweet/lprint
+[submodule "backend/tree-sitter-cpp"]
+	path = backend/tree-sitter-cpp
+	url = https://github.com/tree-sitter/tree-sitter-cpp

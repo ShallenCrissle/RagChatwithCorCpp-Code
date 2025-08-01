@@ -1,0 +1,9 @@
+[
+  {
+    "type": "anonymous_initializer_block",
+    "start_line": 1,
+    "end_line": 16,
+    "code": "//\n// Experimental CPCL driver table for LPrint, a Label Printer Application\n//\n// Copyright \u00a9\u00a02025 by Michael R Sweet.\n//\n// Licensed under Apache License v2.0.  See the file \"LICENSE\" for more\n// information.\n//\n\n{ \"cpcl_generic-203dpi\",\t\"CPCL Label Printer/203dpi\",\n  \"\", NULL },\n{ \"cpcl_generic-300dpi\",\t\"CPCL Label Printer/300dpi\",\n  \"\", NULL },\n{ \"cpcl_hma300e-203dpi\",\t\"HPRT HM-A300E\",\n  \"MANUFACTURER:HPRT;COMMAND SET:CPCL;MODEL:HM-A300E;\", NULL },\n",
+    "file": "data/codebase/lprint/lprint-cpcl.h"
+  }
+]

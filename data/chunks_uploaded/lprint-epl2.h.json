@@ -1,0 +1,9 @@
+[
+  {
+    "type": "anonymous_initializer_block",
+    "start_line": 1,
+    "end_line": 26,
+    "code": "//\n// EPL2 driver table for LPrint, a Label Printer Application\n//\n// Copyright \u00a9\u00a02019-2023 by Michael R Sweet.\n//\n// Licensed under Apache License v2.0.  See the file \"LICENSE\" for more\n// information.\n//\n\n{ \"epl2_2inch-203dpi-dt\",        \"Zebra EPL Page Mode 2-inch/203dpi/Direct-Thermal\",\n  \"\", NULL },\n{ \"epl2_2inch-203dpi-tt\",        \"Zebra EPL Page Mode 2-inch/203dpi/Thermal-Transfer\",\n  \"\", NULL },\n{ \"epl2_2inch-300dpi-dt\",        \"Zebra EPL Page Mode 2-inch/300dpi/Direct-Thermal\",\n  \"\", NULL },\n{ \"epl2_2inch-300dpi-tt\",        \"Zebra EPL Page Mode 2-inch/300dpi/Thermal-Transfer\",\n  \"\", NULL },\n{ \"epl2_4inch-203dpi-dt\",        \"Zebra EPL Page Mode 4-inch/203dpi/Direct-Thermal\",\n  \"COMMAND SET:EPL;\", NULL },\n{ \"epl2_4inch-203dpi-tt\",        \"Zebra EPL Page Mode 4-inch/203dpi/Thermal-Transfer\",\n  \"\", NULL },\n{ \"epl2_4inch-300dpi-dt\",        \"Zebra EPL Page Mode 4-inch/300dpi/Direct-Thermal\",\n  \"\", NULL },\n{ \"epl2_4inch-300dpi-tt\",        \"Zebra EPL Page Mode 4-inch/300dpi/Thermal-Transfer\",\n  \"\", NULL },\n",
+    "file": "data/codebase/lprint/lprint-epl2.h"
+  }
+]
