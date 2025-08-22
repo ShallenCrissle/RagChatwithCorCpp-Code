@@ -1,0 +1,26 @@
+# Base image
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && \
+    apt-get install -y clang libclang-dev build-essential git curl && \
+    rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy only essential files first
+COPY start.sh ./
+COPY requirements.txt ./
+COPY backend ./backend
+COPY frontend ./frontend
+COPY styles.py ./styles.py
+
+# Make start.sh executable
+RUN chmod +x start.sh
+
+# Expose ports
+EXPOSE 8080
+
+# Use start.sh to install heavy dependencies at runtime
+CMD ["bash", "./start.sh"]
