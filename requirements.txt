@@ -1,26 +1,24 @@
-# Core LLM & Embedding (optional heavy, comment out if needed)
-# sentence-transformers
-# transformers
-# torch
-chromadb
+# FastAPI + backend
+fastapi
+uvicorn
+pydantic
+python-dotenv
+requests
+protobuf
 
-# LLM APIs
-cohere
-google-generativeai
+# Optional heavy ML packages (install at runtime)
+chromadb
+torch
+transformers
+sentence-transformers
 
 # UI
 streamlit
 streamlit-option-menu
 
-# Utilities
-tqdm
-python-dotenv
-requests
-
-# Code Parsing
+# Code parsing
 tree-sitter==0.20.4
 tree_sitter_languages==1.10.2
 
-# Compatibility / FastAPI (for backend API)
-protobuf
-uvicorn
+# Utilities
+tqdm
