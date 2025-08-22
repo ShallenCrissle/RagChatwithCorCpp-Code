@@ -1,20 +1,16 @@
-#!/bin/bash
-set -e
+# Install heavy packages at runtime
+echo "[INFO] Installing heavy ML packages..."
+pip install torch transformers sentence-transformers --no-cache-dir
 
-FRONTEND_PORT=${PORT:-8501}   # Streamlit frontend port
-BACKEND_PORT=9000             # Internal backend port
-
-# Install heavy packages at runtime to reduce image size
-echo "[INFO] Installing heavy Python packages..."
-pip install --no-cache-dir torch transformers sentence-transformers chromadb
-
-echo "[INFO] Starting FastAPI backend on port $BACKEND_PORT..."
+# Start backend
 uvicorn backend.api:app --host 0.0.0.0 --port $BACKEND_PORT &
 backend_pid=$!
 
-sleep 5  # Give backend time to start
+# Wait a few seconds for backend to start
+sleep 5
 
-echo "[INFO] Starting Streamlit frontend on port $FRONTEND_PORT..."
+# Start Streamlit frontend
 streamlit run frontend/app.py --server.port $FRONTEND_PORT --server.headless true
 
+# Wait for backend
 wait $backend_pid
