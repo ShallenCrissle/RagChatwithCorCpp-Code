@@ -14,7 +14,7 @@ COPY . .
 
 # Upgrade pip & install lightweight dependencies only
 RUN python -m pip install --upgrade pip
-RUN pip install --no-cache-dir -r requirements_light.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Expose public port
 EXPOSE 8080
