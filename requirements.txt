@@ -1,9 +1,8 @@
-# Core LLM & Embedding (optional heavy, comment out if needed)
-# sentence-transformers
-# transformers
-# torch
+# Core LLM & Embedding
+sentence-transformers
+transformers
+torch
 chromadb
-fastapi
 
 # LLM APIs
 cohere
@@ -21,7 +20,8 @@ requests
 # Code Parsing
 tree-sitter==0.20.4
 tree_sitter_languages==1.10.2
+  
 
-# Compatibility / FastAPI (for backend API)
+# Compatibility
 protobuf
 uvicorn
