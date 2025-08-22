@@ -14,3 +14,4 @@ streamlit run frontend/app.py --server.port $FRONTEND_PORT --server.headless tru
 
 # Wait for backend
 wait $backend_pid
+
