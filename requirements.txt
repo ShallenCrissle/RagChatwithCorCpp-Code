@@ -20,7 +20,7 @@ requests
 # Code Parsing
 tree-sitter==0.20.4
 tree_sitter_languages==1.10.2
-clang==15.0.6.1  # Requires system-wide libclang
+  
 
 # Compatibility
 protobuf
