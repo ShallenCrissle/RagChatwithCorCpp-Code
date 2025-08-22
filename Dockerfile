@@ -1,5 +1,5 @@
-# Base image with Python
-FROM python:3.11-slim
+# Use prebuilt PyTorch runtime (CPU-only, slim)
+FROM pytorch/pytorch:2.8.0-cpu-py3.11-slim
 
 # Install system dependencies
 RUN apt-get update && \
@@ -12,9 +12,23 @@ WORKDIR /app
 # Copy project files
 COPY . .
 
-# Install Python dependencies
+# Upgrade pip
 RUN python -m pip install --upgrade pip
-RUN pip install --no-cache-dir -r requirements.txt
+
+# Install Python dependencies (skip torch as it's already included)
+RUN pip install --no-cache-dir \
+    sentence-transformers \
+    transformers \
+    chromadb \
+    cohere \
+    google-generativeai \
+    streamlit \
+    streamlit-option-menu \
+    python-dotenv \
+    requests \
+    tree-sitter==0.20.4 \
+    tree_sitter_languages==1.10.2 \
+    uvicorn
 
 # Expose Streamlit port
 EXPOSE 8080
