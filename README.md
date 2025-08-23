@@ -62,7 +62,8 @@ All interactions and feedback are stored in:C:feedback_log.json
 Backend: python -m backend.api or uvicorn backend.api:app --reload --host 127.0.0.1 --port 9000   
 Frontend: streamlit run frontend/app.py
 
-![Demo](assets/Demo.gif)
+![Demo](https://github.com/ShallenCrissle/RagChatwithCorCpp-Code/blob/main/assets/Demo.gif)
+
 
 
 
