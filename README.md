@@ -59,8 +59,9 @@ The tool allows you to:
 All interactions and feedback are stored in:C:feedback_log.json
 
 ## To run:
-Backend: python -m backend.api or uvicorn backend.api:app --reload --host 127.0.0.1 --port 9000 \\
+Backend: python -m backend.api or uvicorn backend.api:app --reload --host 127.0.0.1 --port 9000   
 Frontend: streamlit run frontend/app.py
+
 
 
 
