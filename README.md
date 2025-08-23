@@ -63,7 +63,9 @@ Backend: python -m backend.api or uvicorn backend.api:app --reload --host 127.0.
 Frontend: streamlit run frontend/app.py
 
 ## 📷 Demo
+Watch Full Demo Video: 
 ![Demo](https://github.com/ShallenCrissle/RagChatwithCorCpp-Code/blob/main/assets/Demo.gif)
+
 
 
 
