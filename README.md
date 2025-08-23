@@ -62,6 +62,8 @@ All interactions and feedback are stored in:C:feedback_log.json
 Backend: python -m backend.api or uvicorn backend.api:app --reload --host 127.0.0.1 --port 9000   
 Frontend: streamlit run frontend/app.py
 
+[Watch the demo video](https://drive.google.com/file/d/1_7xjwoNJkpNOM2owVYovA7OFTX6uIm1g/view?usp=sharing)
+
 
 
 
