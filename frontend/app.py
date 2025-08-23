@@ -5,38 +5,51 @@ import json
 from datetime import datetime
 from streamlit_option_menu import option_menu
 from styles import apply_theme_styles
-
-# ========== Backend URL ==========
-BACKEND_URL = os.environ.get("BACKEND_URL", "http://127.0.0.1:9000")
-
-# ========== Feedback Logging ==========
 def log_feedback_json(query, feedback):
     entry = {
         "timestamp": datetime.now().isoformat(),
         "query": query,
         "feedback": feedback
     }
-    os.makedirs("data", exist_ok=True)
     with open("data/feedback_log.json", "a", encoding='utf-8') as f:
         f.write(json.dumps(entry) + "\n")
-
 # ========== App Config ==========
 st.set_page_config(page_title="RAG Code Assistant", layout="wide")
-
-# ========= Remove top padding ==========
+# ========= Remove top padding============
 st.markdown("""
     <style>
+        /* Make full page black */
         html, body, .main, .block-container {
             background-color: #000000 !important;
             color: #F5F5F5;
         }
-        .block-container { padding-top: 0rem !important; }
-        .main > div { padding-top: 0rem !important; }
-        [data-testid="stAppViewContainer"] { background-color: #000000 !important; }
-        [data-testid="stHeader"] { background-color: #000000 !important; }
-        [data-testid="stToolbar"] { visibility: hidden !important; }
+
+        /* Remove top margin/padding from everything possible */
+        .block-container {
+            padding-top: 0rem !important;
+        }
+
+        .main > div {
+            padding-top: 0rem !important;
+        }
+
+        /* Override internal containers if any */
+        [data-testid="stAppViewContainer"] {
+            background-color: #000000 !important;
+        }
+
+        [data-testid="stHeader"] {
+            background-color: #000000 !important;
+        }
+
+        [data-testid="stToolbar"] {
+            visibility: hidden !important;
+        }
     </style>
 """, unsafe_allow_html=True)
+
+
+
 
 # ========== Session State Initialization ==========
 st.session_state.setdefault("selected_tab", "Home")
@@ -46,8 +59,8 @@ st.session_state.setdefault("uploaded_file_names", [])
 st.session_state.setdefault("last_question", "")
 st.session_state.setdefault("last_answer", "")
 
-# ========== Apply Theme ==========
-theme = apply_theme_styles()  # returns just `theme`
+# ========== Apply Single Theme (Dark) ==========
+theme = apply_theme_styles()  # now returns just `theme` (not theme, dark_mode)
 
 # ========== Sidebar Branding ==========
 with st.sidebar:
@@ -72,7 +85,9 @@ with st.sidebar:
         menu_title=None,
         options=["Home", "Logs", "Diagram", "About"],
         icons=["house", "journal-text", "diagram-3", "info-circle"],
-        default_index=["Home", "Logs", "Diagram", "About"].index(st.session_state.selected_tab),
+        default_index=["Home", "Logs", "Diagram", "About"].index(
+            st.session_state.selected_tab
+        ),
         orientation="vertical",
     )
 
@@ -125,16 +140,18 @@ def render_home():
                         code_files.append(full_path.replace("\\", "/"))
             return sorted(code_files)
 
-        codebase_dir = "data/codebase/lprint"  # <-- forward slashes
+        codebase_dir = "data\codebase\lprint"
 
         if not os.path.exists(codebase_dir):
             st.error(f"🚫 Codebase folder '{codebase_dir}' not found.")
         else:
             code_files = list_code_files(codebase_dir)
+
             if not code_files:
                 st.warning("⚠ No C/C++ files found in the codebase.")
             else:
                 selected_files = st.multiselect("Select files:", code_files)
+
                 if selected_files:
                     try:
                         files_to_send = [("files", (os.path.basename(f), open(f, "rb"))) for f in selected_files]
@@ -148,7 +165,7 @@ def render_home():
         else:
             with st.spinner("📤 Uploading and embedding files..."):
                 try:
-                    res = requests.post(f"{BACKEND_URL}/upload", files=files_to_send)  # <- dynamic URL
+                    res = requests.post("http://localhost:9000/upload", files=files_to_send)
                     if res.status_code == 200:
                         st.success("✅ Upload successful!")
                         st.session_state.upload_successful = True
@@ -173,13 +190,15 @@ def render_home():
                 st.warning("⚠ Please enter a question.")
             else:
                 uploaded_files = st.session_state.uploaded_file_names
-                query_to_send = (
-                    f"In {uploaded_files[0]}, {query.strip()}" if uploaded_files and len(uploaded_files) == 1 else query.strip()
-                )
+                if uploaded_files and len(uploaded_files) == 1:
+                    filename = uploaded_files[0]
+                    query_to_send = f"In {filename}, {query.strip()}"
+                else:
+                    query_to_send = query.strip()
 
                 with st.spinner("🔍 Connecting to Gemini and retrieving answer..."):
                     try:
-                        res = requests.post(f"{BACKEND_URL}/ask", json={"query": query_to_send})  # <- dynamic URL
+                        res = requests.post("http://localhost:9000/ask", json={"query": query_to_send})
                         if res.status_code == 200:
                             data = res.json()
                             st.session_state.last_question = query
@@ -192,20 +211,25 @@ def render_home():
                             }
                             st.session_state.logs.append(log_entry)
 
-                            log_path = "data/query_logs.json"
-                            existing = []
-                            if os.path.exists(log_path):
-                                try:
-                                    with open(log_path, "r", encoding="utf-8") as f:
-                                        existing = json.load(f)
-                                        if not isinstance(existing, list):
-                                            existing = []
-                                except json.JSONDecodeError:
-                                    st.warning("⚠ Log file is corrupted or empty. Overwriting it.")
+                            try:
+                                os.makedirs("data", exist_ok=True)
+                                log_path = "data/query_logs.json"
+                                existing = []
 
-                            existing.append(log_entry)
-                            with open(log_path, "w", encoding="utf-8") as f:
-                                json.dump(existing, f, indent=2)
+                                if os.path.exists(log_path):
+                                    with open(log_path, "r", encoding="utf-8") as f:
+                                        try:
+                                            existing = json.load(f)
+                                            if not isinstance(existing, list):
+                                                existing = []
+                                        except json.JSONDecodeError:
+                                            st.warning("⚠ Log file is corrupted or empty. Overwriting it.")
+
+                                existing.append(log_entry)
+                                with open(log_path, "w", encoding="utf-8") as f:
+                                    json.dump(existing, f, indent=2)
+                            except Exception as e:
+                                st.error(f"⚠ Failed to save logs: {e}")
 
                             st.success("✅ Answer received.")
                         else:
@@ -218,20 +242,25 @@ def render_home():
             st.info(st.session_state.last_answer)
             st.markdown("#### 🙋 Was this answer helpful?")
             col1, col2 = st.columns(2)
+
             feedback = None  
+
             with col1:
                 if st.button("👍 Yes", key="thumbs_up"):
                     feedback = "positive"
+
             with col2:
                 if st.button("👎 No", key="thumbs_down"):
                     feedback = "negative"
 
+            
             if feedback == "positive":
                 st.success("Thanks for your feedback! 👍")
                 log_feedback_json(st.session_state.last_question, "Yes")
             elif feedback == "negative":
                 st.warning("We'll try to do better next time. 👎")
                 log_feedback_json(st.session_state.last_question, "No")
+
 
 # ========== Logs ==========
 def render_logs():
@@ -266,3 +295,5 @@ elif st.session_state.selected_tab == "Diagram":
     render_diagram()
 elif st.session_state.selected_tab == "About":
     render_about()
+    
+  

@@ -132,7 +132,4 @@ if __name__ == "__main__":
     print("📡 Swagger UI: http://127.0.0.1:9000/docs")
     print("💬 Endpoints: /ask and /upload")
     import uvicorn
-    import os
-    port = int(os.environ.get("PORT", 9000))
-    uvicorn.run("backend.api:app", host="0.0.0.0", port=port)
-    # uvicorn.run("backend.api:app", host="127.0.0.1", port=9000, reload=True)
+    uvicorn.run("backend.api:app", host="127.0.0.1", port=9000, reload=True)
