@@ -1,4 +1,4 @@
-# 🧠 RAG Chat with C/C++ Code
+# CodePilot AI: RAG Chat with C/C++ Code
 
 A powerful Retrieval-Augmented Generation (RAG) assistant designed to answer natural language questions about large C/C++ codebases. It combines **CodeBERT-based embeddings**, **ChromaDB vector storage**, and **LLMs (Gemini 1.5 Flash & Cohere Command R+)** to deliver accurate and contextual responses — all wrapped in a friendly **Streamlit UI**.
 
@@ -65,6 +65,7 @@ Frontend: streamlit run frontend/app.py
 ## 📷 Demo
 To watch the full Demo, Click on the gif  
 [![Demo](https://github.com/ShallenCrissle/RagChatwithCorCpp-Code/blob/main/assets/Demo.gif)](https://drive.google.com/file/d/1eqQWOv6JwpM81Eb-ieJfLJvnUiXIbLg9/view?usp=sharing)
+
 
 
 
